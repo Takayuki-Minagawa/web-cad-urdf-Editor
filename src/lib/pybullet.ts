@@ -4,17 +4,33 @@
 import type { RobotModel } from "../types/robot";
 
 /**
+ * Encode an arbitrary string as a Python string literal. JSON string syntax is
+ * a subset of Python's, so `JSON.stringify` yields a valid, fully-escaped
+ * Python literal (quotes, backslashes, newlines, control chars). This prevents
+ * a robot name containing `"` or a newline from breaking `py_compile`.
+ */
+function pyStr(s: string): string {
+  return JSON.stringify(s);
+}
+
+/** Strip newlines/CRs so a value can be embedded safely in a `#` comment. */
+function commentSafe(s: string): string {
+  return s.replace(/[\r\n]+/g, " ");
+}
+
+/**
  * Build the text of a `preview_pybullet.py` script for the given model.
  * The robot name and joint count are injected from the model; everything else
  * is a static Python template. PyBullet reads limits at runtime from the URDF,
  * so the script is robust to model edits made after generation.
  */
 export function buildPreviewScript(model: RobotModel): string {
-  const name = model.name;
+  const nameComment = commentSafe(model.name);
+  const nameLiteral = pyStr(model.name);
   const jointCount = model.joints.length;
 
   return `#!/usr/bin/env python3
-# Auto-generated PyBullet preview for robot: ${name}
+# Auto-generated PyBullet preview for robot: ${nameComment}
 # Model joints at generation time: ${jointCount}
 #
 # Usage:
@@ -67,7 +83,7 @@ def main():
         sys.exit(1)
 
     num_joints = pybullet.getNumJoints(robot_id)
-    print("Loaded robot '${name}' with", num_joints, "joints")
+    print("Loaded robot", ${nameLiteral}, "with", num_joints, "joints")
 
     joint_type_names = {
         pybullet.JOINT_REVOLUTE: "revolute",

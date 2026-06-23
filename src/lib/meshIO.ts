@@ -15,7 +15,12 @@ export function parseMeshAsset(asset: MeshAsset): THREE.BufferGeometry {
   let geometry: THREE.BufferGeometry | null = null;
 
   if (asset.format === "stl") {
-    geometry = new STLLoader().parse(asset.data);
+    // STL may be ASCII or binary. STLLoader.parse handles both an ArrayBuffer
+    // (binary-safe) and a string (ASCII). Base64-encoded assets carry the
+    // original bytes, so decode them before parsing.
+    const input: ArrayBuffer | string =
+      asset.encoding === "base64" ? base64ToArrayBuffer(asset.data) : asset.data;
+    geometry = new STLLoader().parse(input);
   } else if (asset.format === "obj") {
     const group = new OBJLoader().parse(asset.data);
     const geometries: THREE.BufferGeometry[] = [];
@@ -56,13 +61,23 @@ export function readFileToMeshAsset(file: File): Promise<Omit<MeshAsset, "id">> 
   }
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => {
-      resolve({ name: file.name, format, data: String(reader.result) });
-    };
     reader.onerror = () => {
       reject(reader.error ?? new Error(`Failed to read file: ${file.name}`));
     };
-    reader.readAsText(file);
+    if (format === "stl") {
+      // STL is read as raw bytes so binary STL survives intact; stored base64.
+      reader.onload = () => {
+        const buffer = reader.result as ArrayBuffer;
+        resolve({ name: file.name, format, data: arrayBufferToBase64(buffer), encoding: "base64" });
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      // OBJ is always text.
+      reader.onload = () => {
+        resolve({ name: file.name, format, data: String(reader.result), encoding: "utf8" });
+      };
+      reader.readAsText(file);
+    }
   });
 }
 
@@ -81,7 +96,8 @@ export function geometryToMeshData(
   } else {
     throw new Error(`Unsupported export format: ${format}`);
   }
-  return { name: ensureExtension(name, format), format, data };
+  // three's STL/OBJ exporters emit ASCII text, so utf8 round-trips losslessly.
+  return { name: ensureExtension(name, format), format, data, encoding: "utf8" };
 }
 
 /** Build a BufferGeometry for a primitive geometry spec. */
@@ -114,4 +130,23 @@ function formatFromName(name: string): "stl" | "obj" | null {
 function ensureExtension(name: string, format: "stl" | "obj"): string {
   const ext = `.${format}`;
   return name.toLowerCase().endsWith(ext) ? name : `${name}${ext}`;
+}
+
+/** Encode raw bytes as base64 (chunked to avoid call-stack limits on large meshes). */
+export function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+/** Decode a base64 string back into an ArrayBuffer of the original bytes. */
+export function base64ToArrayBuffer(b64: string): ArrayBuffer {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
 }

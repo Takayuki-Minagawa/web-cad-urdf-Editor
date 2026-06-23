@@ -105,8 +105,9 @@ gravity, prints link/joint info, and creates a slider per non-fixed joint.
 
 The validation panel evaluates the model live. **Errors** block a clean export
 (robot/link/joint names, single root, parent/child resolution, no self-loops,
-no cycles, no disconnected links, non-zero axes, limits on revolute/prismatic,
-positive mass & inertia, collision present, mesh references resolve, unit = m).
+no cycles, no multi-parent links, no disconnected links, non-zero axes, limits
+on revolute/prismatic, positive mass & inertia, positive & finite geometry
+dimensions, collision present, mesh references resolve, unit = m).
 **Warnings** flag risky-but-valid setups (mesh used for collision, identical
 visual/collision mesh, far-off inertial origin, extreme joint limits). Click an
 issue to jump to the offending link/joint.

@@ -39,7 +39,7 @@ describe("buildPackageFiles", () => {
 
   it("validation_report.json is valid JSON with exportReady flag", () => {
     const files = buildPackageFiles(model());
-    const report = JSON.parse(files["validation_report.json"]);
+    const report = JSON.parse(files["validation_report.json"] as string);
     expect(report).toHaveProperty("exportReady");
     expect(report).toHaveProperty("errors");
   });
@@ -49,5 +49,13 @@ describe("buildPackageFiles", () => {
     m.meshes.push({ id: "unused", name: "ghost.obj", format: "obj", data: "o x\n" });
     const files = buildPackageFiles(m);
     expect(files["meshes/visual/ghost.obj"]).toBeUndefined();
+  });
+
+  it("emits base64 (binary) meshes as a binary package entry", () => {
+    const m = model();
+    // Simulate an imported binary STL stored as base64.
+    m.meshes[0] = { id: "m1", name: "arm.stl", format: "stl", data: "QUJD", encoding: "base64" };
+    const files = buildPackageFiles(m);
+    expect(files["meshes/visual/arm.stl"]).toEqual({ base64: "QUJD" });
   });
 });

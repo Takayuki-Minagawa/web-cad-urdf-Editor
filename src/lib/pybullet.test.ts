@@ -58,4 +58,21 @@ describe("buildPreviewScript", () => {
     expect(script).toContain("stepSimulation");
     expect(script).toContain("setAdditionalSearchPath");
   });
+
+  it("escapes a robot name containing quotes and newlines", () => {
+    const m = buildModel();
+    m.name = 'evil"\nname';
+    const out = buildPreviewScript(m);
+
+    // The name is printed via a fully-escaped Python literal.
+    expect(out).toContain(`print("Loaded robot", ${JSON.stringify('evil"\nname')},`);
+
+    // No source line carries a raw newline injected from the name: the comment
+    // is collapsed to one line, so the "Auto-generated" comment stays a comment.
+    const lines = out.split("\n");
+    const commentLine = lines.find((l) => l.startsWith("# Auto-generated PyBullet preview"));
+    expect(commentLine).toContain('evil" name');
+    // The stray "name" fragment must never appear as its own bare code line.
+    expect(lines).not.toContain("name");
+  });
 });

@@ -4,6 +4,8 @@ import {
   primitiveToBufferGeometry,
   parseMeshAsset,
   geometryToMeshData,
+  arrayBufferToBase64,
+  base64ToArrayBuffer,
 } from "./meshIO";
 import type { MeshAsset } from "../types/robot";
 
@@ -43,6 +45,28 @@ describe("parseMeshAsset", () => {
     expect(g).toBeInstanceOf(THREE.BufferGeometry);
     expect(g.getAttribute("position").count).toBeGreaterThan(0);
     expect(g.boundingBox).not.toBeNull();
+  });
+
+  it("parses a base64-encoded STL the same as its raw text", () => {
+    const bytes = new TextEncoder().encode(STL_TRI);
+    const asset: MeshAsset = {
+      id: "2",
+      name: "t.stl",
+      format: "stl",
+      data: arrayBufferToBase64(bytes.buffer),
+      encoding: "base64",
+    };
+    const g = parseMeshAsset(asset);
+    expect(g.getAttribute("position").count).toBeGreaterThan(0);
+  });
+});
+
+describe("base64 round-trip", () => {
+  it("preserves arbitrary binary bytes exactly", () => {
+    // Bytes that are NOT valid UTF-8 (a text round-trip would corrupt these).
+    const original = new Uint8Array([0x00, 0xff, 0x80, 0x01, 0x7f, 0xfe, 0x42]);
+    const restored = new Uint8Array(base64ToArrayBuffer(arrayBufferToBase64(original.buffer)));
+    expect(Array.from(restored)).toEqual(Array.from(original));
   });
 });
 

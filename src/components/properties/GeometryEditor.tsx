@@ -34,7 +34,7 @@ export function GeometryEditor({
 
       {geometry.type === "box" && (
         <Field label="size (m)">
-          <Vec3Input value={geometry.size} onChange={(size) => onChange({ type: "box", size })} />
+          <Vec3Input value={geometry.size} min={0} onChange={(size) => onChange({ type: "box", size })} />
         </Field>
       )}
 

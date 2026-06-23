@@ -52,7 +52,7 @@ def main():
         sys.exit(1)
 
     num_joints = pybullet.getNumJoints(robot_id)
-    print("Loaded robot 'sample_arm' with", num_joints, "joints")
+    print("Loaded robot", "sample_arm", "with", num_joints, "joints")
 
     joint_type_names = {
         pybullet.JOINT_REVOLUTE: "revolute",

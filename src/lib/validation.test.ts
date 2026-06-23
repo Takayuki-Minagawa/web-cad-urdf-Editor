@@ -161,6 +161,27 @@ describe("validateModel - graph errors", () => {
     expect(codes(result)).toContain("JOINT_SELF_LOOP");
   });
 
+  it("flags a link claimed as the child of two joints (multi-parent)", () => {
+    // base -> a, base -> b, a -> b : single-rooted and acyclic, but b has two
+    // parents, which is invalid for a URDF link tree.
+    const base = makeLink("base");
+    const a = makeLink("a");
+    const b = makeLink("b");
+    const m: RobotModel = {
+      ...emptyModel(),
+      name: "r",
+      links: [base, a, b],
+      joints: [
+        makeJoint("j1", base.id, a.id, "fixed"),
+        makeJoint("j2", base.id, b.id, "fixed"),
+        makeJoint("j3", a.id, b.id, "fixed"),
+      ],
+    };
+    const result = validateModel(m);
+    expect(codes(result)).toContain("MULTI_PARENT");
+    expect(result.exportReady).toBe(false);
+  });
+
   it("flags a bad parent and bad child reference", () => {
     const m = validModel();
     m.joints[0].parent = "does-not-exist-parent";
@@ -276,6 +297,45 @@ describe("validateModel - link physical errors", () => {
     delete m.links[1].collision;
     const result = validateModel(m);
     expect(codes(result)).toContain("MISSING_COLLISION");
+  });
+
+  it("flags a non-positive box dimension", () => {
+    const m = validModel();
+    m.links[1].collision!.geometry = { type: "box", size: [0.1, 0, 0.1] };
+    const result = validateModel(m);
+    expect(codes(result)).toContain("BAD_GEOMETRY_DIM");
+  });
+
+  it("flags a negative box dimension on visual geometry", () => {
+    const m = validModel();
+    m.links[1].visual!.geometry = { type: "box", size: [-0.1, 0.1, 0.1] };
+    const result = validateModel(m);
+    expect(codes(result)).toContain("BAD_GEOMETRY_DIM");
+  });
+
+  it("flags a zero cylinder length", () => {
+    const m = validModel();
+    m.links[1].collision!.geometry = { type: "cylinder", radius: 0.05, length: 0 };
+    const result = validateModel(m);
+    expect(codes(result)).toContain("BAD_GEOMETRY_DIM");
+  });
+
+  it("flags a non-positive mesh scale", () => {
+    const m = validModel();
+    const mesh: MeshAsset = { id: "mesh-1", name: "a.stl", format: "stl", data: "solid" };
+    m.meshes = [mesh];
+    m.links[1].visual = {
+      geometry: { type: "mesh", meshId: "mesh-1", scale: [1, 0, 1] },
+      origin: { xyz: [0, 0, 0], rpy: [0, 0, 0] },
+      color: [1, 1, 1, 1],
+    };
+    const result = validateModel(m);
+    expect(codes(result)).toContain("BAD_GEOMETRY_DIM");
+  });
+
+  it("does not flag valid default geometry", () => {
+    const result = validateModel(validModel());
+    expect(codes(result)).not.toContain("BAD_GEOMETRY_DIM");
   });
 
   it("flags a missing mesh reference", () => {

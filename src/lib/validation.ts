@@ -31,6 +31,30 @@ function meshIdOf(geom: GeometrySpec | undefined): string | undefined {
   return geom && geom.type === "mesh" ? geom.meshId : undefined;
 }
 
+function isPositive(n: number): boolean {
+  return Number.isFinite(n) && n > 0;
+}
+
+/**
+ * Return a human-readable reason if any dimension of `geom` is non-positive or
+ * non-finite, else undefined. PyBullet rejects zero/negative primitive sizes,
+ * so these must block export.
+ */
+function badGeometryReason(geom: GeometrySpec): string | undefined {
+  switch (geom.type) {
+    case "box":
+      return geom.size.every(isPositive) ? undefined : "box size must be positive in every axis";
+    case "sphere":
+      return isPositive(geom.radius) ? undefined : "sphere radius must be positive";
+    case "cylinder":
+      return isPositive(geom.radius) && isPositive(geom.length)
+        ? undefined
+        : "cylinder radius and length must be positive";
+    case "mesh":
+      return geom.scale.every(isPositive) ? undefined : "mesh scale must be positive in every axis";
+  }
+}
+
 export function validateModel(model: RobotModel): ValidationResult {
   const errors: ValidationIssue[] = [];
   const warnings: ValidationIssue[] = [];
@@ -122,6 +146,25 @@ export function validateModel(model: RobotModel): ValidationResult {
         "JOINT_SELF_LOOP",
         `Joint "${j.name}" connects a link to itself.`,
         { kind: "joint", id: j.id },
+      );
+    }
+  }
+
+  // ---- multi-parent (child referenced by >1 joint) -------------------------
+  // A URDF link tree requires each link to have at most one parent joint, even
+  // when the graph is single-rooted and acyclic. Flag any link claimed twice.
+  const childRefCounts = new Map<string, number>();
+  for (const j of joints) {
+    if (linkIds.has(j.child)) {
+      childRefCounts.set(j.child, (childRefCounts.get(j.child) ?? 0) + 1);
+    }
+  }
+  for (const l of links) {
+    if ((childRefCounts.get(l.id) ?? 0) > 1) {
+      err(
+        "MULTI_PARENT",
+        `Link "${l.name}" is the child of more than one joint (a URDF link may have only one parent).`,
+        { kind: "link", id: l.id },
       );
     }
   }
@@ -270,6 +313,22 @@ export function validateModel(model: RobotModel): ValidationResult {
         `Link "${l.name}" has no collision geometry.`,
         { kind: "link", id: l.id },
       );
+    }
+
+    // geometry dimensions must be positive & finite (visual and collision)
+    for (const [bucket, geom] of [
+      ["visual", l.visual?.geometry],
+      ["collision", l.collision?.geometry],
+    ] as const) {
+      if (!geom) continue;
+      const reason = badGeometryReason(geom);
+      if (reason) {
+        err(
+          "BAD_GEOMETRY_DIM",
+          `Link "${l.name}" ${bucket} geometry is invalid: ${reason}.`,
+          { kind: "link", id: l.id },
+        );
+      }
     }
 
     // mesh references must exist

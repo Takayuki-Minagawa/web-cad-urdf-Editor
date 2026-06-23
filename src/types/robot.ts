@@ -87,8 +87,15 @@ export interface MeshAsset {
   /** original file name, e.g. "arm.stl" */
   name: string;
   format: "stl" | "obj";
-  /** raw file contents, used when exporting the package */
+  /**
+   * Raw file contents, used when exporting the package. Interpreted according
+   * to `encoding`: "utf8" (default) is verbatim text; "base64" holds the
+   * base64-encoded original bytes, used to preserve *binary* STL files which
+   * must not be round-tripped through a text decoder.
+   */
   data: string;
+  /** How `data` is encoded. Absent is treated as "utf8" for back-compat. */
+  encoding?: "utf8" | "base64";
 }
 
 export interface RobotModel {

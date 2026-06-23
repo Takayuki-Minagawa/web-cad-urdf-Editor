@@ -58,11 +58,13 @@ export function Vec3Input({
   value,
   onChange,
   step,
+  min,
   labels = ["x", "y", "z"],
 }: {
   value: Vec3;
   onChange: (v: Vec3) => void;
   step?: number;
+  min?: number;
   labels?: [string, string, string];
 }) {
   return (
@@ -73,6 +75,7 @@ export function Vec3Input({
           <NumberInput
             value={value[i]}
             step={step}
+            min={min}
             onChange={(n) => {
               const next = [...value] as Vec3;
               next[i] = n;
