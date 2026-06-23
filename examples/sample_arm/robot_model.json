@@ -1,0 +1,194 @@
+{
+  "schemaVersion": 1,
+  "model": {
+    "name": "sample_arm",
+    "unit": "m",
+    "links": [
+      {
+        "id": "link_mqqlx4z2_126e2",
+        "name": "base_link",
+        "visual": {
+          "geometry": {
+            "type": "box",
+            "size": [
+              0.2,
+              0.2,
+              0.1
+            ]
+          },
+          "origin": {
+            "xyz": [
+              0,
+              0,
+              0.05
+            ],
+            "rpy": [
+              0,
+              0,
+              0
+            ]
+          },
+          "color": [
+            0.3,
+            0.35,
+            0.4,
+            1
+          ]
+        },
+        "collision": {
+          "geometry": {
+            "type": "box",
+            "size": [
+              0.2,
+              0.2,
+              0.1
+            ]
+          },
+          "origin": {
+            "xyz": [
+              0,
+              0,
+              0.05
+            ],
+            "rpy": [
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "inertial": {
+          "origin": {
+            "xyz": [
+              0,
+              0,
+              0.05
+            ],
+            "rpy": [
+              0,
+              0,
+              0
+            ]
+          },
+          "mass": 2,
+          "inertia": {
+            "ixx": 0.008333333333333335,
+            "iyy": 0.008333333333333335,
+            "izz": 0.013333333333333336,
+            "ixy": 0,
+            "ixz": 0,
+            "iyz": 0
+          }
+        }
+      },
+      {
+        "id": "link_mqqlx4z3_2ee4e",
+        "name": "arm_link",
+        "visual": {
+          "geometry": {
+            "type": "cylinder",
+            "radius": 0.04,
+            "length": 0.4
+          },
+          "origin": {
+            "xyz": [
+              0,
+              0,
+              0.2
+            ],
+            "rpy": [
+              0,
+              0,
+              0
+            ]
+          },
+          "color": [
+            0.8,
+            0.5,
+            0.2,
+            1
+          ]
+        },
+        "collision": {
+          "geometry": {
+            "type": "cylinder",
+            "radius": 0.04,
+            "length": 0.4
+          },
+          "origin": {
+            "xyz": [
+              0,
+              0,
+              0.2
+            ],
+            "rpy": [
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "inertial": {
+          "origin": {
+            "xyz": [
+              0,
+              0,
+              0.2
+            ],
+            "rpy": [
+              0,
+              0,
+              0
+            ]
+          },
+          "mass": 1,
+          "inertia": {
+            "ixx": 0.013733333333333335,
+            "iyy": 0.013733333333333335,
+            "izz": 0.0008,
+            "ixy": 0,
+            "ixz": 0,
+            "iyz": 0
+          }
+        }
+      }
+    ],
+    "joints": [
+      {
+        "id": "joint_mqqlx4z3_30e46",
+        "name": "shoulder",
+        "type": "revolute",
+        "parent": "link_mqqlx4z2_126e2",
+        "child": "link_mqqlx4z3_2ee4e",
+        "origin": {
+          "xyz": [
+            0,
+            0,
+            0.1
+          ],
+          "rpy": [
+            0,
+            0,
+            0
+          ]
+        },
+        "axis": [
+          0,
+          1,
+          0
+        ],
+        "limit": {
+          "lower": -1.57,
+          "upper": 1.57,
+          "effort": 50,
+          "velocity": 1.5
+        },
+        "dynamics": {
+          "damping": 0.1,
+          "friction": 0
+        }
+      }
+    ],
+    "meshes": []
+  }
+}
