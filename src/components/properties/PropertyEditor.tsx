@@ -28,14 +28,13 @@ function Missing() {
 }
 
 function MeshProperties({ mesh }: { mesh: { id: string; name: string; format: string; data: string } }) {
+  const links = useRobotStore((s) => s.model.links);
   const replaceMeshName = (name: string) => {
     useRobotStore.setState((s) => ({
       model: { ...s.model, meshes: s.model.meshes.map((m) => (m.id === mesh.id ? { ...m, name } : m)) },
     }));
   };
-  const usedBy = useRobotStore
-    .getState()
-    .model.links.filter(
+  const usedBy = links.filter(
       (l) =>
         (l.visual?.geometry.type === "mesh" && l.visual.geometry.meshId === mesh.id) ||
         (l.collision?.geometry.type === "mesh" && l.collision.geometry.meshId === mesh.id),

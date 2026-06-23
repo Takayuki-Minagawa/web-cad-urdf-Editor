@@ -21,6 +21,12 @@ describe("fmt", () => {
     expect(fmt(1)).toBe("1");
     expect(fmt(1.5)).toBe("1.5");
   });
+
+  it("keeps tiny non-zero magnitudes from flushing to 0", () => {
+    expect(fmt(1e-7)).toBe("1e-7");
+    expect(Number(fmt(1e-7))).toBeCloseTo(1e-7, 12);
+    expect(fmt(0)).toBe("0");
+  });
 });
 
 describe("buildUrdf", () => {

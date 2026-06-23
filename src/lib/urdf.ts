@@ -15,6 +15,11 @@ import { resolveMeshPlacements, type MeshPlacement } from "./meshPaths";
 export function fmt(n: number): string {
   if (!Number.isFinite(n)) return "0";
   if (Object.is(n, -0)) n = 0;
+  // Small but non-zero magnitudes (e.g. tiny inertias) must not flush to "0",
+  // which would be physically invalid in URDF. Use scientific notation instead.
+  if (n !== 0 && Math.abs(n) < 1e-6) {
+    return n.toExponential(6).replace(/\.?0+e/, "e");
+  }
   // up to 6 significant decimals, strip trailing zeros
   let s = n.toFixed(6);
   s = s.replace(/\.?0+$/, "");
