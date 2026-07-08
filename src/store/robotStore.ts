@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import {
   type CollisionSpec,
+  type GeometrySpec,
   type GeometryKind,
   type Inertia,
   type InertialSpec,
@@ -15,6 +16,7 @@ import {
 } from "../types/robot";
 import { makeId, uniqueName } from "../lib/ids";
 import { DEFAULT_JOINT_DYNAMICS, DEFAULT_JOINT_LIMIT, defaultGeometry, makeJoint, makeLink } from "../lib/factories";
+import { disposeAllCachedMeshGeometries, disposeCachedMeshGeometry } from "../lib/meshGeometryCache";
 
 export type Selection =
   | { kind: "link"; id: string }
@@ -76,27 +78,40 @@ export function emptyModel(): RobotModel {
   return { name: "my_robot", unit: "m", links: [], joints: [], meshes: [] };
 }
 
+function unlinkMeshGeometry(geometry: GeometrySpec): GeometrySpec {
+  if (geometry.type !== "mesh") return geometry;
+  return { ...geometry, meshId: "" };
+}
+
 function withoutMeshReference(link: LinkSpec, meshId: string): LinkSpec {
   const visualUsesMesh = link.visual?.geometry.type === "mesh" && link.visual.geometry.meshId === meshId;
   const collisionUsesMesh = link.collision?.geometry.type === "mesh" && link.collision.geometry.meshId === meshId;
   if (!visualUsesMesh && !collisionUsesMesh) return link;
   return {
     ...link,
-    visual: visualUsesMesh ? undefined : link.visual,
-    collision: collisionUsesMesh ? undefined : link.collision,
+    visual: visualUsesMesh && link.visual ? { ...link.visual, geometry: unlinkMeshGeometry(link.visual.geometry) } : link.visual,
+    collision: collisionUsesMesh && link.collision ? { ...link.collision, geometry: unlinkMeshGeometry(link.collision.geometry) } : link.collision,
   };
 }
 
-function blocksSelfLoop(joint: JointSpec): boolean {
-  return joint.parent === joint.child;
+function mapLinkById(model: RobotModel, id: string, update: (link: LinkSpec) => LinkSpec): RobotModel {
+  return {
+    ...model,
+    links: model.links.map((link) => (link.id === id ? update(link) : link)),
+  };
 }
 
-function hasLink(model: RobotModel, id: string): boolean {
-  return model.links.some((l) => l.id === id);
+function mapJointById(model: RobotModel, id: string, update: (joint: JointSpec) => JointSpec): RobotModel {
+  return {
+    ...model,
+    joints: model.joints.map((joint) => (joint.id === id ? update(joint) : joint)),
+  };
 }
 
-function hasValidJointEndpoints(model: RobotModel, joint: JointSpec): boolean {
-  return !blocksSelfLoop(joint) && hasLink(model, joint.parent) && hasLink(model, joint.child);
+function appendLink(model: RobotModel, baseName: string, geometry = defaultGeometry("box")) {
+  const name = uniqueName(baseName, model.links.map((l) => l.name));
+  const link = makeLink(name, geometry);
+  return { link, model: { ...model, links: [...model.links, link] } };
 }
 
 export const useRobotStore = create<RobotState>((set, get) => ({
@@ -114,16 +129,21 @@ export const useRobotStore = create<RobotState>((set, get) => ({
 
   setRobotName: (name) => set((s) => ({ model: { ...s.model, name } })),
 
-  loadModel: (model) => set({ model, selection: null }),
+  loadModel: (model) => {
+    disposeAllCachedMeshGeometries();
+    set({ model, selection: null });
+  },
 
-  newModel: () => set({ model: emptyModel(), selection: null }),
+  newModel: () => {
+    disposeAllCachedMeshGeometries();
+    set({ model: emptyModel(), selection: null });
+  },
 
   addLink: () => {
     const s = get();
-    const name = uniqueName("link", s.model.links.map((l) => l.name));
-    const link = makeLink(name);
+    const { link, model } = appendLink(s.model, "link");
     set({
-      model: { ...s.model, links: [...s.model.links, link] },
+      model,
       selection: { kind: "link", id: link.id },
     });
     return link.id;
@@ -131,10 +151,9 @@ export const useRobotStore = create<RobotState>((set, get) => ({
 
   addPrimitiveLink: (kind) => {
     const s = get();
-    const name = uniqueName(kind, s.model.links.map((l) => l.name));
-    const link = makeLink(name, defaultGeometry(kind));
+    const { link, model } = appendLink(s.model, kind, defaultGeometry(kind));
     set({
-      model: { ...s.model, links: [...s.model.links, link] },
+      model,
       selection: { kind: "link", id: link.id },
     });
     return link.id;
@@ -142,60 +161,42 @@ export const useRobotStore = create<RobotState>((set, get) => ({
 
   updateLink: (id, patch) =>
     set((s) => ({
-      model: {
-        ...s.model,
-        links: s.model.links.map((l) => (l.id === id ? { ...l, ...patch } : l)),
-      },
+      model: mapLinkById(s.model, id, (link) => ({ ...link, ...patch })),
     })),
 
   setLinkVisual: (id, visual) =>
     set((s) => ({
-      model: {
-        ...s.model,
-        links: s.model.links.map((l) => (l.id === id ? { ...l, visual } : l)),
-      },
+      model: mapLinkById(s.model, id, (link) => ({ ...link, visual })),
     })),
 
   updateLinkVisual: (id, patch) =>
     set((s) => ({
-      model: {
-        ...s.model,
-        links: s.model.links.map((l) => (l.id === id && l.visual ? { ...l, visual: { ...l.visual, ...patch } } : l)),
-      },
+      model: mapLinkById(s.model, id, (link) => (link.visual ? { ...link, visual: { ...link.visual, ...patch } } : link)),
     })),
 
   setLinkCollision: (id, collision) =>
     set((s) => ({
-      model: {
-        ...s.model,
-        links: s.model.links.map((l) => (l.id === id ? { ...l, collision } : l)),
-      },
+      model: mapLinkById(s.model, id, (link) => ({ ...link, collision })),
     })),
 
   updateLinkCollision: (id, patch) =>
     set((s) => ({
-      model: {
-        ...s.model,
-        links: s.model.links.map((l) => (l.id === id && l.collision ? { ...l, collision: { ...l.collision, ...patch } } : l)),
-      },
+      model: mapLinkById(s.model, id, (link) =>
+        link.collision ? { ...link, collision: { ...link.collision, ...patch } } : link,
+      ),
     })),
 
   updateLinkInertial: (id, patch) =>
     set((s) => ({
-      model: {
-        ...s.model,
-        links: s.model.links.map((l) => (l.id === id ? { ...l, inertial: { ...l.inertial, ...patch } } : l)),
-      },
+      model: mapLinkById(s.model, id, (link) => ({ ...link, inertial: { ...link.inertial, ...patch } })),
     })),
 
   updateLinkInertia: (id, patch) =>
     set((s) => ({
-      model: {
-        ...s.model,
-        links: s.model.links.map((l) =>
-          l.id === id ? { ...l, inertial: { ...l.inertial, inertia: { ...l.inertial.inertia, ...patch } } } : l,
-        ),
-      },
+      model: mapLinkById(s.model, id, (link) => ({
+        ...link,
+        inertial: { ...link.inertial, inertia: { ...link.inertial.inertia, ...patch } },
+      })),
     })),
 
   removeLink: (id) =>
@@ -222,50 +223,30 @@ export const useRobotStore = create<RobotState>((set, get) => ({
 
   updateJoint: (id, patch) =>
     set((s) => ({
-      model: {
-        ...s.model,
-        joints: s.model.joints.map((j) => {
-          if (j.id !== id) return j;
-          const next = { ...j, ...patch };
-          return hasValidJointEndpoints(s.model, next) ? next : j;
-        }),
-      },
+      model: mapJointById(s.model, id, (joint) => ({ ...joint, ...patch })),
     })),
 
   setJointType: (id, type) =>
     set((s) => ({
-      model: {
-        ...s.model,
-        joints: s.model.joints.map((j) => {
-          if (j.id !== id) return j;
-          return {
-            ...j,
-            type,
-            limit: type === "revolute" || type === "prismatic" ? (j.limit ?? { ...DEFAULT_JOINT_LIMIT }) : undefined,
-            dynamics: type === "fixed" ? undefined : (j.dynamics ?? { ...DEFAULT_JOINT_DYNAMICS }),
-          };
-        }),
-      },
+      model: mapJointById(s.model, id, (joint) => ({
+        ...joint,
+        type,
+        limit: type === "revolute" || type === "prismatic" ? (joint.limit ?? { ...DEFAULT_JOINT_LIMIT }) : undefined,
+        dynamics: type === "fixed" ? undefined : (joint.dynamics ?? { ...DEFAULT_JOINT_DYNAMICS }),
+      })),
     })),
 
   updateJointLimit: (id, patch) =>
     set((s) => ({
-      model: {
-        ...s.model,
-        joints: s.model.joints.map((j) =>
-          j.id === id ? { ...j, limit: { ...(j.limit ?? DEFAULT_JOINT_LIMIT), ...patch } } : j,
-        ),
-      },
+      model: mapJointById(s.model, id, (joint) => ({ ...joint, limit: { ...(joint.limit ?? DEFAULT_JOINT_LIMIT), ...patch } })),
     })),
 
   updateJointDynamics: (id, patch) =>
     set((s) => ({
-      model: {
-        ...s.model,
-        joints: s.model.joints.map((j) =>
-          j.id === id ? { ...j, dynamics: { ...(j.dynamics ?? DEFAULT_JOINT_DYNAMICS), ...patch } } : j,
-        ),
-      },
+      model: mapJointById(s.model, id, (joint) => ({
+        ...joint,
+        dynamics: { ...(joint.dynamics ?? DEFAULT_JOINT_DYNAMICS), ...patch },
+      })),
     })),
 
   removeJoint: (id) =>
@@ -293,6 +274,7 @@ export const useRobotStore = create<RobotState>((set, get) => ({
 
   removeMesh: (id) =>
     set((s) => {
+      disposeCachedMeshGeometry(id);
       const selection = s.selection?.kind === "mesh" && s.selection.id === id ? null : s.selection;
       return {
         model: {

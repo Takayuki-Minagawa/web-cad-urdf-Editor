@@ -53,18 +53,21 @@ describe("projectIO", () => {
     expect(() => parseProject(JSON.stringify({ model: { links: [] } }))).toThrow();
   });
 
-  it("throws when a nested link shape is malformed", () => {
+  it("normalizes a mildly malformed nested link shape", () => {
     const model = buildModel();
     const broken = {
       ...model,
-      links: [{ ...model.links[0], inertial: { ...model.links[0].inertial, mass: "heavy" } }],
+      name: undefined,
+      links: [{ ...model.links[0], inertial: { origin: model.links[0].inertial.origin, inertia: { ixx: 1, iyy: 2, izz: 3 }, mass: "heavy" } }],
     };
-    expect(() => parseProject(JSON.stringify(broken))).toThrow();
+    const parsed = parseProject(JSON.stringify(broken));
+    expect(parsed.name).toBe("my_robot");
+    expect(parsed.links[0].inertial.mass).toBe(1);
+    expect(parsed.links[0].inertial.inertia).toEqual({ ixx: 1, ixy: 0, ixz: 0, iyy: 2, iyz: 0, izz: 3 });
   });
 
-  it("throws when schemaVersion is unsupported", () => {
-    expect(() => parseProject(JSON.stringify({ schemaVersion: PROJECT_SCHEMA_VERSION + 1, model: buildModel() }))).toThrow(
-      /unsupported schemaVersion/,
-    );
+  it("accepts unknown schemaVersion values when the model can be normalized", () => {
+    const parsed = parseProject(JSON.stringify({ schemaVersion: PROJECT_SCHEMA_VERSION + 1, model: buildModel() }));
+    expect(parsed.name).toBe("round_trip_robot");
   });
 });
