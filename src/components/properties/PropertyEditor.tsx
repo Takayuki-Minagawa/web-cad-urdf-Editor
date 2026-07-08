@@ -1,4 +1,5 @@
 import { useRobotStore } from "../../store/robotStore";
+import type { MeshAsset } from "../../types/robot";
 import { Field, Section, TextInput } from "../common/inputs";
 import { LinkProperties } from "./LinkProperties";
 import { JointProperties } from "./JointProperties";
@@ -27,13 +28,10 @@ function Missing() {
   return <div className="prop-empty">This item no longer exists.</div>;
 }
 
-function MeshProperties({ mesh }: { mesh: { id: string; name: string; format: string; data: string } }) {
+function MeshProperties({ mesh }: { mesh: MeshAsset }) {
   const links = useRobotStore((s) => s.model.links);
-  const replaceMeshName = (name: string) => {
-    useRobotStore.setState((s) => ({
-      model: { ...s.model, meshes: s.model.meshes.map((m) => (m.id === mesh.id ? { ...m, name } : m)) },
-    }));
-  };
+  const updateMesh = useRobotStore((s) => s.updateMesh);
+  const replaceMeshName = (name: string) => updateMesh(mesh.id, { name });
   const usedBy = links.filter(
       (l) =>
         (l.visual?.geometry.type === "mesh" && l.visual.geometry.meshId === mesh.id) ||

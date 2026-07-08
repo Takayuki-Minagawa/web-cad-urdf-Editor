@@ -40,7 +40,7 @@ export function LinkObject({ link, world, meshes, view, selected, onSelect }: Pr
             meshes={meshes}
             color={selected ? [1, 0.7, 0.2, link.visual.color[3]] : link.visual.color}
             onPointerDown={(e) => {
-              (e as unknown as { stopPropagation: () => void }).stopPropagation();
+              e.stopPropagation();
               onSelect();
             }}
           />
@@ -56,7 +56,7 @@ export function LinkObject({ link, world, meshes, view, selected, onSelect }: Pr
             wireframe
             opacity={0.6}
             onPointerDown={(e) => {
-              (e as unknown as { stopPropagation: () => void }).stopPropagation();
+              e.stopPropagation();
               onSelect();
             }}
           />
