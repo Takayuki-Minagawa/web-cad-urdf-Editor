@@ -1,30 +1,30 @@
-import type { CollisionSpec, LinkSpec, VisualSpec } from "../../types/robot";
-import { ZERO_POSE, clonePose } from "../../types/robot";
+import type { LinkSpec } from "../../types/robot";
 import { useRobotStore } from "../../store/robotStore";
 import { inertiaFromGeometry } from "../../lib/inertia";
-import { DEFAULT_COLOR, defaultGeometry } from "../../lib/factories";
+import { makeCollision, makeVisual } from "../../lib/factories";
+import { notify } from "../../lib/userFeedback";
 import { Field, NumberInput, Section, TextInput } from "../common/inputs";
 import { GeometryEditor } from "./GeometryEditor";
 import { ColorEditor, PoseEditor } from "./PoseEditor";
 
 export function LinkProperties({ link }: { link: LinkSpec }) {
-  const replaceLink = useRobotStore((s) => s.replaceLink);
+  const updateLink = useRobotStore((s) => s.updateLink);
+  const setLinkVisual = useRobotStore((s) => s.setLinkVisual);
+  const updateLinkVisual = useRobotStore((s) => s.updateLinkVisual);
+  const setLinkCollision = useRobotStore((s) => s.setLinkCollision);
+  const updateLinkCollision = useRobotStore((s) => s.updateLinkCollision);
+  const updateLinkInertial = useRobotStore((s) => s.updateLinkInertial);
+  const updateLinkInertia = useRobotStore((s) => s.updateLinkInertia);
   const meshes = useRobotStore((s) => s.model.meshes);
 
-  const patch = (changes: Partial<LinkSpec>) => replaceLink({ ...link, ...changes });
+  const patch = (changes: Partial<LinkSpec>) => updateLink(link.id, changes);
 
   const toggleVisual = (on: boolean) => {
-    if (on) {
-      const v: VisualSpec = { geometry: defaultGeometry("box"), origin: clonePose(ZERO_POSE), color: [...DEFAULT_COLOR] };
-      patch({ visual: v });
-    } else patch({ visual: undefined });
+    setLinkVisual(link.id, on ? makeVisual() : undefined);
   };
 
   const toggleCollision = (on: boolean) => {
-    if (on) {
-      const c: CollisionSpec = { geometry: defaultGeometry("box"), origin: clonePose(ZERO_POSE) };
-      patch({ collision: c });
-    } else patch({ collision: undefined });
+    setLinkCollision(link.id, on ? makeCollision() : undefined);
   };
 
   const autoInertia = () => {
@@ -32,10 +32,10 @@ export function LinkProperties({ link }: { link: LinkSpec }) {
     if (!geom) return;
     const inertia = inertiaFromGeometry(link.inertial.mass, geom);
     if (!inertia) {
-      alert("Auto inertia is only available for box/cylinder/sphere geometry.");
+      notify("Auto inertia is only available for box/cylinder/sphere geometry.");
       return;
     }
-    patch({ inertial: { ...link.inertial, inertia } });
+    updateLinkInertial(link.id, { inertia });
   };
 
   const i = link.inertial.inertia;
@@ -58,10 +58,10 @@ export function LinkProperties({ link }: { link: LinkSpec }) {
             <GeometryEditor
               geometry={link.visual.geometry}
               meshes={meshes}
-              onChange={(geometry) => patch({ visual: { ...link.visual!, geometry } })}
+              onChange={(geometry) => updateLinkVisual(link.id, { geometry })}
             />
-            <PoseEditor pose={link.visual.origin} onChange={(origin) => patch({ visual: { ...link.visual!, origin } })} />
-            <ColorEditor color={link.visual.color} onChange={(color) => patch({ visual: { ...link.visual!, color } })} />
+            <PoseEditor pose={link.visual.origin} onChange={(origin) => updateLinkVisual(link.id, { origin })} />
+            <ColorEditor color={link.visual.color} onChange={(color) => updateLinkVisual(link.id, { color })} />
           </>
         )}
       </Section>
@@ -77,11 +77,11 @@ export function LinkProperties({ link }: { link: LinkSpec }) {
               geometry={link.collision.geometry}
               meshes={meshes}
               allowMesh
-              onChange={(geometry) => patch({ collision: { ...link.collision!, geometry } })}
+              onChange={(geometry) => updateLinkCollision(link.id, { geometry })}
             />
             <PoseEditor
               pose={link.collision.origin}
-              onChange={(origin) => patch({ collision: { ...link.collision!, origin } })}
+              onChange={(origin) => updateLinkCollision(link.id, { origin })}
             />
           </>
         )}
@@ -89,12 +89,12 @@ export function LinkProperties({ link }: { link: LinkSpec }) {
 
       <Section title="Inertial">
         <Field label="mass (kg)">
-          <NumberInput value={link.inertial.mass} min={0} onChange={(mass) => patch({ inertial: { ...link.inertial, mass } })} />
+          <NumberInput value={link.inertial.mass} min={0} onChange={(mass) => updateLinkInertial(link.id, { mass })} />
         </Field>
         <div className="field-label" style={{ marginTop: 6 }}>center of mass</div>
         <PoseEditor
           pose={link.inertial.origin}
-          onChange={(origin) => patch({ inertial: { ...link.inertial, origin } })}
+          onChange={(origin) => updateLinkInertial(link.id, { origin })}
         />
         <button className="btn btn-small" style={{ margin: "6px 0" }} onClick={autoInertia}>
           Auto-compute inertia from geometry
@@ -106,7 +106,7 @@ export function LinkProperties({ link }: { link: LinkSpec }) {
               <NumberInput
                 value={i[key]}
                 step={0.0001}
-                onChange={(v) => patch({ inertial: { ...link.inertial, inertia: { ...i, [key]: v } } })}
+                onChange={(v) => updateLinkInertia(link.id, { [key]: v })}
               />
             </label>
           ))}

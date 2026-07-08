@@ -78,20 +78,3 @@ export async function buildPackage(model: RobotModel): Promise<PackageResult> {
   const safeName = model.name.replace(/[^A-Za-z0-9._-]/g, "_") || "robot";
   return { blob, fileName: `${safeName}_package.zip` };
 }
-
-/** Trigger a browser download of a blob. */
-export function downloadBlob(blob: Blob, fileName: string): void {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = fileName;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
-/** Trigger a browser download of a text file. */
-export function downloadText(text: string, fileName: string, mime = "application/json"): void {
-  downloadBlob(new Blob([text], { type: mime }), fileName);
-}

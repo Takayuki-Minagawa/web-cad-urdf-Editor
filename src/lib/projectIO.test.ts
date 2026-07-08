@@ -52,4 +52,19 @@ describe("projectIO", () => {
   it("throws when model fields are missing", () => {
     expect(() => parseProject(JSON.stringify({ model: { links: [] } }))).toThrow();
   });
+
+  it("throws when a nested link shape is malformed", () => {
+    const model = buildModel();
+    const broken = {
+      ...model,
+      links: [{ ...model.links[0], inertial: { ...model.links[0].inertial, mass: "heavy" } }],
+    };
+    expect(() => parseProject(JSON.stringify(broken))).toThrow();
+  });
+
+  it("throws when schemaVersion is unsupported", () => {
+    expect(() => parseProject(JSON.stringify({ schemaVersion: PROJECT_SCHEMA_VERSION + 1, model: buildModel() }))).toThrow(
+      /unsupported schemaVersion/,
+    );
+  });
 });

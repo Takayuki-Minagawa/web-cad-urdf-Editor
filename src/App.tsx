@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRobotStore } from "./store/robotStore";
 import { sampleRobot } from "./sample/sampleRobot";
 import { Toolbar } from "./components/toolbar/Toolbar";
@@ -14,12 +14,14 @@ export function App() {
   const loadModel = useRobotStore((s) => s.loadModel);
   const hasLinks = useRobotStore((s) => s.model.links.length > 0);
   const [tab, setTab] = useState<CenterTab>("3d");
+  const seeded = useRef(false);
 
   // Seed with the sample arm on first load so the app is never empty.
   useEffect(() => {
+    if (seeded.current) return;
+    seeded.current = true;
     if (!hasLinks) loadModel(sampleRobot());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [hasLinks, loadModel]);
 
   return (
     <div className="app">

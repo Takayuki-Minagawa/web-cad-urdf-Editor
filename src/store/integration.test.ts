@@ -47,6 +47,48 @@ describe("store + export integration", () => {
     expect(useRobotStore.getState().model.links).toHaveLength(1);
   });
 
+  it("removes mesh references when a mesh asset is deleted", () => {
+    const s = useRobotStore.getState();
+    const linkId = s.addLink();
+    const meshId = s.addMesh({ name: "display.stl", format: "stl", data: "solid empty\nendsolid empty", encoding: "utf8" });
+    s.updateLinkVisual(linkId, { geometry: { type: "mesh", meshId, scale: [1, 1, 1] } });
+    s.updateLinkCollision(linkId, { geometry: { type: "mesh", meshId, scale: [1, 1, 1] } });
+
+    useRobotStore.getState().removeMesh(meshId);
+
+    const link = useRobotStore.getState().model.links.find((l) => l.id === linkId)!;
+    expect(link.visual).toBeUndefined();
+    expect(link.collision).toBeUndefined();
+  });
+
+  it("keeps joint type dependent fields consistent", () => {
+    const s = useRobotStore.getState();
+    const a = s.addLink();
+    const b = s.addLink();
+    const jointId = s.addJoint(a, b, "revolute")!;
+
+    s.setJointType(jointId, "fixed");
+    expect(useRobotStore.getState().model.joints[0].limit).toBeUndefined();
+    expect(useRobotStore.getState().model.joints[0].dynamics).toBeUndefined();
+
+    s.setJointType(jointId, "prismatic");
+    expect(useRobotStore.getState().model.joints[0].limit).toBeDefined();
+    expect(useRobotStore.getState().model.joints[0].dynamics).toBeDefined();
+  });
+
+  it("ignores joint endpoint updates that would break references", () => {
+    const s = useRobotStore.getState();
+    const a = s.addLink();
+    const b = s.addLink();
+    const jointId = s.addJoint(a, b, "revolute")!;
+
+    s.updateJoint(jointId, { child: a });
+    expect(useRobotStore.getState().model.joints[0].child).toBe(b);
+
+    s.updateJoint(jointId, { parent: "missing_link" });
+    expect(useRobotStore.getState().model.joints[0].parent).toBe(a);
+  });
+
   it("round-trips the project through save/load", () => {
     const s = useRobotStore.getState();
     s.setRobotName("rt");

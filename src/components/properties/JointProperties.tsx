@@ -6,22 +6,13 @@ import { PoseEditor } from "./PoseEditor";
 const TYPES: JointType[] = ["fixed", "revolute", "continuous", "prismatic"];
 
 export function JointProperties({ joint }: { joint: JointSpec }) {
-  const replaceJoint = useRobotStore((s) => s.replaceJoint);
+  const updateJoint = useRobotStore((s) => s.updateJoint);
+  const setJointType = useRobotStore((s) => s.setJointType);
+  const updateJointLimit = useRobotStore((s) => s.updateJointLimit);
+  const updateJointDynamics = useRobotStore((s) => s.updateJointDynamics);
   const links = useRobotStore((s) => s.model.links);
 
-  const patch = (changes: Partial<JointSpec>) => replaceJoint({ ...joint, ...changes });
-
-  const changeType = (type: JointType) => {
-    const next: JointSpec = { ...joint, type };
-    if (type === "revolute" || type === "prismatic") {
-      next.limit = joint.limit ?? { lower: -1.57, upper: 1.57, effort: 100, velocity: 1 };
-    } else {
-      next.limit = undefined;
-    }
-    if (type === "fixed") next.dynamics = undefined;
-    else next.dynamics = joint.dynamics ?? { damping: 0, friction: 0 };
-    replaceJoint(next);
-  };
+  const patch = (changes: Partial<JointSpec>) => updateJoint(joint.id, changes);
 
   const needsLimit = joint.type === "revolute" || joint.type === "prismatic";
   const movable = joint.type !== "fixed";
@@ -33,7 +24,7 @@ export function JointProperties({ joint }: { joint: JointSpec }) {
           <TextInput value={joint.name} onChange={(name) => patch({ name })} />
         </Field>
         <Field label="type">
-          <select className="select" value={joint.type} onChange={(e) => changeType(e.target.value as JointType)}>
+          <select className="select" value={joint.type} onChange={(e) => setJointType(joint.id, e.target.value as JointType)}>
             {TYPES.map((t) => (
               <option key={t} value={t}>
                 {t}
@@ -76,16 +67,16 @@ export function JointProperties({ joint }: { joint: JointSpec }) {
       {needsLimit && (
         <Section title="Limit">
           <Field label="lower (rad/m)">
-            <NumberInput value={joint.limit?.lower ?? 0} onChange={(lower) => patch({ limit: { ...limit(joint), lower } })} />
+            <NumberInput value={joint.limit?.lower ?? 0} onChange={(lower) => updateJointLimit(joint.id, { lower })} />
           </Field>
           <Field label="upper (rad/m)">
-            <NumberInput value={joint.limit?.upper ?? 0} onChange={(upper) => patch({ limit: { ...limit(joint), upper } })} />
+            <NumberInput value={joint.limit?.upper ?? 0} onChange={(upper) => updateJointLimit(joint.id, { upper })} />
           </Field>
           <Field label="effort (N·m / N)">
-            <NumberInput value={joint.limit?.effort ?? 0} min={0} onChange={(effort) => patch({ limit: { ...limit(joint), effort } })} />
+            <NumberInput value={joint.limit?.effort ?? 0} min={0} onChange={(effort) => updateJointLimit(joint.id, { effort })} />
           </Field>
           <Field label="velocity">
-            <NumberInput value={joint.limit?.velocity ?? 0} min={0} onChange={(velocity) => patch({ limit: { ...limit(joint), velocity } })} />
+            <NumberInput value={joint.limit?.velocity ?? 0} min={0} onChange={(velocity) => updateJointLimit(joint.id, { velocity })} />
           </Field>
         </Section>
       )}
@@ -93,20 +84,13 @@ export function JointProperties({ joint }: { joint: JointSpec }) {
       {movable && (
         <Section title="Dynamics">
           <Field label="damping">
-            <NumberInput value={joint.dynamics?.damping ?? 0} min={0} onChange={(damping) => patch({ dynamics: { ...dyn(joint), damping } })} />
+            <NumberInput value={joint.dynamics?.damping ?? 0} min={0} onChange={(damping) => updateJointDynamics(joint.id, { damping })} />
           </Field>
           <Field label="friction">
-            <NumberInput value={joint.dynamics?.friction ?? 0} min={0} onChange={(friction) => patch({ dynamics: { ...dyn(joint), friction } })} />
+            <NumberInput value={joint.dynamics?.friction ?? 0} min={0} onChange={(friction) => updateJointDynamics(joint.id, { friction })} />
           </Field>
         </Section>
       )}
     </div>
   );
-}
-
-function limit(joint: JointSpec) {
-  return joint.limit ?? { lower: 0, upper: 0, effort: 0, velocity: 0 };
-}
-function dyn(joint: JointSpec) {
-  return joint.dynamics ?? { damping: 0, friction: 0 };
 }

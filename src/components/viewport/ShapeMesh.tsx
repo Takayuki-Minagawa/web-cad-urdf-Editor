@@ -1,7 +1,8 @@
 import { useMemo } from "react";
 import * as THREE from "three";
+import type { ThreeEvent } from "@react-three/fiber";
 import type { GeometrySpec, MeshAsset, Rgba } from "../../types/robot";
-import { parseMeshAsset } from "../../lib/meshIO";
+import { getCachedMeshGeometry } from "../../lib/meshGeometryCache";
 
 interface Props {
   geometry: GeometrySpec;
@@ -9,7 +10,7 @@ interface Props {
   color?: Rgba;
   wireframe?: boolean;
   opacity?: number;
-  onPointerDown?: (e: THREE.Event) => void;
+  onPointerDown?: (e: ThreeEvent<PointerEvent>) => void;
 }
 
 /** Renders a single GeometrySpec. Cylinders are oriented along +Z (URDF convention). */
@@ -18,11 +19,7 @@ export function ShapeMesh({ geometry, meshes, color, wireframe, opacity = 1, onP
     if (geometry.type !== "mesh") return null;
     const asset = meshes.find((m) => m.id === geometry.meshId);
     if (!asset) return null;
-    try {
-      return parseMeshAsset(asset);
-    } catch {
-      return null;
-    }
+    return getCachedMeshGeometry(asset);
   }, [geometry, meshes]);
 
   const [r, g, b, a] = color ?? [0.6, 0.6, 0.65, 1];
