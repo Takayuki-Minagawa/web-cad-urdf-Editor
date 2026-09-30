@@ -60,6 +60,30 @@ describe("validateModel - review regressions", () => {
     expect(validateModel(m).errors).toEqual([]);
   });
 
+  it.each([1, 1e-200, 1e200])("rejects rank-two Gram tensors at scale %s", (scale) => {
+    const rows = [[1, 2], [1, 3], [1, 1]];
+    // Each permutation is B B^T for a 3x2 matrix, hence exactly singular.
+    for (const order of [[0, 1, 2], [1, 0, 2], [2, 1, 0]]) {
+      const [a, b, c] = order.map((i) => rows[i]);
+      const dot = (u: number[], v: number[]) => (u[0] * v[0] + u[1] * v[1]) * scale;
+      const m = validModel();
+      m.links[0].inertial.inertia = {
+        ixx: dot(a, a), iyy: dot(b, b), izz: dot(c, c),
+        ixy: dot(a, b), ixz: dot(a, c), iyz: dot(b, c),
+      };
+      expect(codes(validateModel(m))).toContain("NON_POSITIVE_DEFINITE_INERTIA");
+    }
+  });
+
+  it("accepts a well-resolved positive tensor with a small scaled determinant", () => {
+    const m = validModel();
+    const correlation = Math.sqrt(1 - 1e-10);
+    m.links[0].inertial.inertia = {
+      ixx: 1, iyy: 1, izz: 1, ixy: correlation, ixz: correlation, iyz: correlation * correlation,
+    };
+    expect(validateModel(m).errors).toEqual([]);
+  });
+
   it.each(["fixed", "continuous"] as const)("ignores unused limit fields on a loaded %s joint", (type) => {
     const m = validModel();
     m.joints[0].type = type;

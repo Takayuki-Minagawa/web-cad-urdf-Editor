@@ -55,7 +55,11 @@ function isPositiveDefinite(inertia: Inertia): boolean {
   if (yy <= tolerance || zz <= tolerance) return false;
   const diagonalProduct = yy * zz;
   const offDiagonalSquare = offDiagonal * offDiagonal;
-  return diagonalProduct - offDiagonalSquare > tolerance * (diagonalProduct + offDiagonalSquare);
+  // Each Schur entry already contains roundoff from the correlations and
+  // subtraction from 1. Propagate those entry errors through the determinant,
+  // rather than considering only the error of the final subtraction.
+  const determinantError = tolerance * (Math.abs(yy) + Math.abs(zz) + 2 * Math.abs(offDiagonal)) + tolerance * tolerance;
+  return diagonalProduct - offDiagonalSquare > determinantError;
 }
 
 function meshIdOf(geom: GeometrySpec | undefined): string | undefined {
