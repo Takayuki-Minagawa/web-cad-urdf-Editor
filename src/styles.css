@@ -467,3 +467,5 @@ body {
   background: #15181d;
   white-space: pre;
 }
+
+.joint-preview-slider { width: 100%; accent-color: var(--accent); }

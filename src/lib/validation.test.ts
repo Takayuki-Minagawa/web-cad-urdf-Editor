@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import { validateModel, type ValidationResult } from "./validation";
 import { makeLink, makeJoint } from "./factories";
 import { emptyModel } from "../store/robotStore";
+import { parseProject } from "./projectIO";
+import { buildUrdf } from "./urdf";
 import {
   type LinkSpec,
   type RobotModel,
@@ -42,6 +44,56 @@ describe("validateModel - valid model", () => {
   it("does not flag a non-fixed joint with a non-zero default axis", () => {
     const result = validateModel(validModel());
     expect(codes(result)).not.toContain("ZERO_AXIS");
+  });
+});
+
+describe("validateModel - review regressions", () => {
+  it.each([1, 0.2, 1e-6, 1e-200, 1e200])("rejects a singular off-diagonal tensor at scale %s", (scale) => {
+    const m = validModel();
+    m.links[0].inertial.inertia = { ixx: scale, iyy: scale, izz: 2 * scale, ixy: scale, ixz: 0, iyz: 0 };
+    expect(codes(validateModel(m))).toContain("NON_POSITIVE_DEFINITE_INERTIA");
+  });
+
+  it("accepts a positive diagonal tensor across very different magnitudes", () => {
+    const m = validModel();
+    m.links[0].inertial.inertia = { ixx: 1e-200, iyy: 1e200, izz: 1e200, ixy: 0, ixz: 0, iyz: 0 };
+    expect(validateModel(m).errors).toEqual([]);
+  });
+
+  it.each([1, 1e-200, 1e200])("rejects rank-two Gram tensors at scale %s", (scale) => {
+    const rows = [[1, 2], [1, 3], [1, 1]];
+    // Each permutation is B B^T for a 3x2 matrix, hence exactly singular.
+    for (const order of [[0, 1, 2], [1, 0, 2], [2, 1, 0]]) {
+      const [a, b, c] = order.map((i) => rows[i]);
+      const dot = (u: number[], v: number[]) => (u[0] * v[0] + u[1] * v[1]) * scale;
+      const m = validModel();
+      m.links[0].inertial.inertia = {
+        ixx: dot(a, a), iyy: dot(b, b), izz: dot(c, c),
+        ixy: dot(a, b), ixz: dot(a, c), iyz: dot(b, c),
+      };
+      expect(codes(validateModel(m))).toContain("NON_POSITIVE_DEFINITE_INERTIA");
+    }
+  });
+
+  it("accepts a well-resolved positive tensor with a small scaled determinant", () => {
+    const m = validModel();
+    const correlation = Math.sqrt(1 - 1e-10);
+    m.links[0].inertial.inertia = {
+      ixx: 1, iyy: 1, izz: 1, ixy: correlation, ixz: correlation, iyz: correlation * correlation,
+    };
+    expect(validateModel(m).errors).toEqual([]);
+  });
+
+  it.each(["fixed", "continuous"] as const)("ignores unused limit fields on a loaded %s joint", (type) => {
+    const m = validModel();
+    m.joints[0].type = type;
+    m.joints[0].limit = { lower: 2, upper: -2, effort: -1, velocity: -1 };
+    if (type === "fixed") m.joints[0].dynamics = { damping: -1, friction: -1 };
+    const loaded = parseProject(JSON.stringify(m));
+    expect(validateModel(loaded).errors).toEqual([]);
+    const doc = new DOMParser().parseFromString(buildUrdf(loaded), "application/xml");
+    expect(doc.querySelector("joint limit")).toBeNull();
+    if (type === "fixed") expect(doc.querySelector("joint dynamics")).toBeNull();
   });
 });
 
@@ -245,6 +297,75 @@ describe("validateModel - graph errors", () => {
 });
 
 describe("validateModel - joint physical errors", () => {
+  it.each([NaN, Infinity, -Infinity])("flags a non-finite axis component (%s)", (value) => {
+    const m = validModel();
+    m.joints[0].axis = [0, value, 1];
+    const result = validateModel(m);
+    expect(result.errors).toContainEqual(expect.objectContaining({
+      code: "NON_FINITE_AXIS", target: { kind: "joint", id: m.joints[0].id },
+    }));
+    expect(result.exportReady).toBe(false);
+  });
+
+  it("allows finite non-zero axes without squaring tiny or huge components", () => {
+    const m = validModel();
+    for (const value of [1e-200, 1e200]) {
+      m.joints[0].axis = [value, 0, 0];
+      expect(validateModel(m).exportReady).toBe(true);
+    }
+  });
+
+  it("does not validate the unused axis on a fixed joint", () => {
+    const m = validModel();
+    m.joints[0].type = "fixed";
+    m.joints[0].axis = [NaN, Infinity, 0];
+    expect(validateModel(m).exportReady).toBe(true);
+  });
+
+  it.each(["lower", "upper", "effort", "velocity"] as const)("flags non-finite joint limit %s", (field) => {
+    const m = validModel();
+    for (const value of [NaN, Infinity, -Infinity]) {
+      m.joints[0].limit![field] = value;
+      const result = validateModel(m);
+      expect(result.errors).toContainEqual(expect.objectContaining({
+        code: "BAD_JOINT_LIMIT", target: { kind: "joint", id: m.joints[0].id },
+      }));
+      expect(warnCodes(result)).not.toContain("EXTREME_LIMIT");
+      expect(result.exportReady).toBe(false);
+    }
+  });
+
+  it("flags reversed joint limits", () => {
+    const m = validModel();
+    m.joints[0].limit = { lower: 1, upper: -1, effort: 1, velocity: 1 };
+    expect(codes(validateModel(m))).toContain("BAD_JOINT_LIMIT");
+  });
+
+  it.each(["effort", "velocity"] as const)("flags negative joint limit %s", (field) => {
+    const m = validModel();
+    m.joints[0].limit![field] = -1;
+    expect(codes(validateModel(m))).toContain("BAD_JOINT_LIMIT");
+  });
+
+  it("allows equal limit bounds and zero effort, velocity, and dynamics", () => {
+    const m = validModel();
+    m.joints[0].limit = { lower: 0, upper: 0, effort: 0, velocity: 0 };
+    m.joints[0].dynamics = { damping: 0, friction: 0 };
+    expect(validateModel(m).exportReady).toBe(true);
+  });
+
+  it.each(["damping", "friction"] as const)("flags invalid joint %s", (field) => {
+    const m = validModel();
+    for (const value of [-1, NaN, Infinity, -Infinity]) {
+      m.joints[0].dynamics![field] = value;
+      const result = validateModel(m);
+      expect(result.errors).toContainEqual(expect.objectContaining({
+        code: "BAD_JOINT_DYNAMICS", target: { kind: "joint", id: m.joints[0].id },
+      }));
+      expect(result.exportReady).toBe(false);
+    }
+  });
+
   it("flags a zero axis on a non-fixed joint", () => {
     const m = validModel();
     m.joints[0].axis = [0, 0, 0];
@@ -278,6 +399,61 @@ describe("validateModel - joint physical errors", () => {
 });
 
 describe("validateModel - link physical errors", () => {
+  it.each([NaN, Infinity, -Infinity, -1])("flags invalid mass (%s)", (value) => {
+    const m = validModel();
+    m.links[1].inertial.mass = value;
+    const result = validateModel(m);
+    expect(result.errors).toContainEqual(expect.objectContaining({
+      code: "NON_POSITIVE_MASS", target: { kind: "link", id: m.links[1].id },
+    }));
+    expect(result.exportReady).toBe(false);
+  });
+
+  it.each(["ixx", "ixy", "ixz", "iyy", "iyz", "izz"] as const)("flags non-finite inertia %s", (field) => {
+    const m = validModel();
+    for (const value of [NaN, Infinity, -Infinity]) {
+      m.links[1].inertial.inertia[field] = value;
+      const result = validateModel(m);
+      expect(result.errors).toContainEqual(expect.objectContaining({
+        code: "NON_FINITE_INERTIA", target: { kind: "link", id: m.links[1].id },
+      }));
+      expect(result.exportReady).toBe(false);
+    }
+  });
+
+  it.each([
+    { ixx: 1, iyy: 1, izz: 1, ixy: 2, ixz: 0, iyz: 0 },
+    { ixx: 1, iyy: 1, izz: 1, ixy: 0, ixz: 0, iyz: 2 },
+    { ixx: 1, iyy: 1, izz: 1, ixy: 1, ixz: 1, iyz: 1 },
+    { ixx: 1, iyy: 1, izz: 1, ixy: 0.9, ixz: 0.9, iyz: -0.9 },
+  ])("flags a non-positive-definite inertia tensor ($ixy, $ixz, $iyz)", (inertia) => {
+    const m = validModel();
+    m.links[1].inertial.inertia = inertia;
+    const result = validateModel(m);
+    expect(result.errors).toContainEqual(expect.objectContaining({
+      code: "NON_POSITIVE_DEFINITE_INERTIA", target: { kind: "link", id: m.links[1].id },
+    }));
+    expect(result.exportReady).toBe(false);
+  });
+
+  it.each([1e-200, 1, 1e200])("accepts a positive-definite tensor at scale %s", (scale) => {
+    const m = validModel();
+    m.links[1].inertial.inertia = {
+      ixx: 2 * scale, iyy: 3 * scale, izz: 4 * scale,
+      ixy: 0.2 * scale, ixz: -0.3 * scale, iyz: 0.4 * scale,
+    };
+    expect(validateModel(m).exportReady).toBe(true);
+  });
+
+  it.each([1e-200, 1e200])("rejects a singular tensor at scale %s", (scale) => {
+    const m = validModel();
+    m.links[1].inertial.inertia = {
+      ixx: scale, iyy: scale, izz: scale,
+      ixy: scale, ixz: scale, iyz: scale,
+    };
+    expect(codes(validateModel(m))).toContain("NON_POSITIVE_DEFINITE_INERTIA");
+  });
+
   it("flags non-positive mass", () => {
     const m = validModel();
     m.links[1].inertial.mass = 0;
@@ -365,6 +541,35 @@ describe("validateModel - link physical errors", () => {
     };
     const result = validateModel(m);
     expect(codes(result)).not.toContain("MISSING_MESH");
+  });
+});
+
+describe("validateModel - non-finite poses", () => {
+  it.each(["xyz", "rpy"] as const)("flags non-finite joint origin %s", (field) => {
+    const m = validModel();
+    for (const value of [NaN, Infinity, -Infinity]) {
+      m.joints[0].origin[field][1] = value;
+      const result = validateModel(m);
+      expect(result.errors).toContainEqual(expect.objectContaining({
+        code: "NON_FINITE_POSE", target: { kind: "joint", id: m.joints[0].id },
+      }));
+      expect(result.exportReady).toBe(false);
+    }
+  });
+
+  it.each(["visual", "collision", "inertial"] as const)("flags non-finite link %s origin", (bucket) => {
+    for (const field of ["xyz", "rpy"] as const) {
+      for (const value of [NaN, Infinity, -Infinity]) {
+        const m = validModel();
+        m.links[1][bucket]!.origin[field][2] = value;
+        const result = validateModel(m);
+        expect(result.errors).toContainEqual(expect.objectContaining({
+          code: "NON_FINITE_POSE", target: { kind: "link", id: m.links[1].id },
+        }));
+        expect(warnCodes(result)).not.toContain("INERTIAL_ORIGIN_FAR");
+        expect(result.exportReady).toBe(false);
+      }
+    }
   });
 });
 

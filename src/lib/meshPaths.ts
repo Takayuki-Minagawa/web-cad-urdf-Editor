@@ -4,7 +4,7 @@
 // A mesh asset can be referenced from a visual and/or a collision geometry.
 // We emit it under meshes/visual/<file> and/or meshes/collision/<file> as used.
 
-import type { RobotModel } from "../types/robot";
+import type { MeshAsset, RobotModel } from "../types/robot";
 
 export interface MeshPlacement {
   meshId: string;
@@ -15,8 +15,14 @@ export interface MeshPlacement {
   collisionPath?: string;
 }
 
-function sanitize(name: string): string {
-  return name.replace(/[^A-Za-z0-9._-]/g, "_");
+function meshFileName(mesh: MeshAsset): string {
+  // Asset names are editable labels; the payload format determines the file
+  // extension so renaming a mesh cannot make an exported URDF unloadable.
+  const stem = mesh.name
+    .replace(/[^A-Za-z0-9._-]/g, "_")
+    .replace(/\.(stl|obj)$/i, "")
+    .replace(/^\.+|\.+$/g, "") || "mesh";
+  return `${stem}.${mesh.format}`;
 }
 
 /**
@@ -38,26 +44,27 @@ export function resolveMeshPlacements(model: RobotModel): Map<string, MeshPlacem
   const uniqueIn = (taken: Set<string>, base: string): string => {
     let candidate = base;
     let i = 1;
-    while (taken.has(candidate)) {
+    while (taken.has(candidate.toLowerCase())) {
       const dot = base.lastIndexOf(".");
       candidate = dot > 0 ? `${base.slice(0, dot)}_${i}${base.slice(dot)}` : `${base}_${i}`;
       i += 1;
     }
-    taken.add(candidate);
+    taken.add(candidate.toLowerCase());
     return candidate;
   };
 
   for (const mesh of model.meshes) {
     const used = visualUsers.has(mesh.id) || collisionUsers.has(mesh.id);
     if (!used) continue;
-    const placement: MeshPlacement = { meshId: mesh.id, fileName: sanitize(mesh.name) };
+    const baseName = meshFileName(mesh);
+    const placement: MeshPlacement = { meshId: mesh.id, fileName: baseName };
     if (visualUsers.has(mesh.id)) {
-      const fn = uniqueIn(visualNames, sanitize(mesh.name));
+      const fn = uniqueIn(visualNames, baseName);
       placement.fileName = fn;
       placement.visualPath = `meshes/visual/${fn}`;
     }
     if (collisionUsers.has(mesh.id)) {
-      const fn = uniqueIn(collisionNames, sanitize(mesh.name));
+      const fn = uniqueIn(collisionNames, baseName);
       placement.collisionPath = `meshes/collision/${fn}`;
       if (!placement.visualPath) placement.fileName = fn;
     }

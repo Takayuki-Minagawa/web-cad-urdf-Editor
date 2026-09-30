@@ -1,12 +1,15 @@
 // Pure validation of a RobotModel. Produces a list of errors and warnings and
-// whether the model is ready to export (no errors). No external dependencies:
-// only the data-model types are imported.
+// whether the model is ready to export (no errors). No external dependencies;
+// identity checks are shared with the project reader.
 
 import {
   type GeometrySpec,
+  type Inertia,
+  type Pose,
   type RobotModel,
   type Vec3,
 } from "../types/robot";
+import { findIdentityIssues } from "./modelIdentity";
 
 export type Severity = "error" | "warning";
 
@@ -24,7 +27,39 @@ export interface ValidationResult {
 }
 
 function magnitude(v: Vec3): number {
-  return Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+  return Math.hypot(...v);
+}
+
+function isFinitePose(pose: Pose): boolean {
+  return pose.xyz.every(Number.isFinite) && pose.rpy.every(Number.isFinite);
+}
+
+/**
+ * Diagonal scaling gives a dimensionless matrix with unit diagonal, preserving
+ * definiteness without underflowing tiny inertias or highly unequal diagonals.
+ * Allow for relative floating-point roundoff when rejecting singular tensors;
+ * the tolerance is independent of the mass/length units and inertia magnitude.
+ */
+function isPositiveDefinite(inertia: Inertia): boolean {
+  const x = Math.sqrt(inertia.ixx);
+  const y = Math.sqrt(inertia.iyy);
+  const z = Math.sqrt(inertia.izz);
+  const xy = (inertia.ixy / x) / y;
+  const xz = (inertia.ixz / x) / z;
+  const yz = (inertia.iyz / y) / z;
+  if (![xy, xz, yz].every(Number.isFinite)) return false;
+  const yy = 1 - xy * xy;
+  const zz = 1 - xz * xz;
+  const offDiagonal = yz - xy * xz;
+  const tolerance = 8 * Number.EPSILON;
+  if (yy <= tolerance || zz <= tolerance) return false;
+  const diagonalProduct = yy * zz;
+  const offDiagonalSquare = offDiagonal * offDiagonal;
+  // Each Schur entry already contains roundoff from the correlations and
+  // subtraction from 1. Propagate those entry errors through the determinant,
+  // rather than considering only the error of the final subtraction.
+  const determinantError = tolerance * (Math.abs(yy) + Math.abs(zz) + 2 * Math.abs(offDiagonal)) + tolerance * tolerance;
+  return diagonalProduct - offDiagonalSquare > determinantError;
 }
 
 function meshIdOf(geom: GeometrySpec | undefined): string | undefined {
@@ -266,11 +301,16 @@ function validateConnected(
 
 function validateJointPhysics(ctx: ValidationContext): void {
   for (const j of ctx.joints) {
-    if (j.type !== "fixed" && magnitude(j.axis) === 0) {
-      ctx.err("ZERO_AXIS", `Joint "${j.name}" is non-fixed but has a zero axis vector.`, {
-        kind: "joint",
-        id: j.id,
-      });
+    const target = { kind: "joint", id: j.id } as const;
+    if (!isFinitePose(j.origin)) {
+      ctx.err("NON_FINITE_POSE", `Joint "${j.name}" origin must contain only finite numbers.`, target);
+    }
+    if (j.type !== "fixed") {
+      if (!j.axis.every(Number.isFinite)) {
+        ctx.err("NON_FINITE_AXIS", `Joint "${j.name}" axis must contain only finite numbers.`, target);
+      } else if (j.axis.every((value) => value === 0)) {
+        ctx.err("ZERO_AXIS", `Joint "${j.name}" is non-fixed but has a zero axis vector.`, target);
+      }
     }
     if ((j.type === "revolute" || j.type === "prismatic") && !j.limit) {
       ctx.err("MISSING_LIMIT", `Joint "${j.name}" of type "${j.type}" must define a limit.`, {
@@ -278,11 +318,19 @@ function validateJointPhysics(ctx: ValidationContext): void {
         id: j.id,
       });
     }
-    if (j.limit && (Math.abs(j.limit.lower) > 1e3 || Math.abs(j.limit.upper) > 1e3)) {
-      ctx.warn("EXTREME_LIMIT", `Joint "${j.name}" has an extremely large limit value.`, {
-        kind: "joint",
-        id: j.id,
-      });
+    if ((j.type === "revolute" || j.type === "prismatic") && j.limit) {
+      const { lower, upper, effort, velocity } = j.limit;
+      if (![lower, upper, effort, velocity].every(Number.isFinite) || lower > upper || effort < 0 || velocity < 0) {
+        ctx.err("BAD_JOINT_LIMIT", `Joint "${j.name}" limits must be finite, with lower <= upper and non-negative effort and velocity.`, target);
+      } else if (Math.abs(lower) > 1e3 || Math.abs(upper) > 1e3) {
+        ctx.warn("EXTREME_LIMIT", `Joint "${j.name}" has an extremely large limit value.`, target);
+      }
+    }
+    if (j.type !== "fixed" && j.dynamics) {
+      const { damping, friction } = j.dynamics;
+      if (![damping, friction].every((value) => Number.isFinite(value) && value >= 0)) {
+        ctx.err("BAD_JOINT_DYNAMICS", `Joint "${j.name}" damping and friction must be finite and non-negative.`, target);
+      }
     }
   }
 }
@@ -290,18 +338,36 @@ function validateJointPhysics(ctx: ValidationContext): void {
 function validateLinkPhysics(ctx: ValidationContext): void {
   for (const l of ctx.links) {
     const inertial = l.inertial;
-    if (!inertial || !(inertial.mass > 0)) {
-      ctx.err("NON_POSITIVE_MASS", `Link "${l.name}" must have a positive mass.`, { kind: "link", id: l.id });
+    const target = { kind: "link", id: l.id } as const;
+    if (!inertial || !isPositive(inertial.mass)) {
+      ctx.err("NON_POSITIVE_MASS", `Link "${l.name}" must have a finite, positive mass.`, target);
     }
-    if (!inertial || !(inertial.inertia.ixx > 0) || !(inertial.inertia.iyy > 0) || !(inertial.inertia.izz > 0)) {
+    if (inertial && ![
+      inertial.inertia.ixx, inertial.inertia.ixy, inertial.inertia.ixz,
+      inertial.inertia.iyy, inertial.inertia.iyz, inertial.inertia.izz,
+    ].every(Number.isFinite)) {
+      ctx.err("NON_FINITE_INERTIA", `Link "${l.name}" inertia must contain only finite numbers.`, target);
+    } else if (!inertial || !(inertial.inertia.ixx > 0) || !(inertial.inertia.iyy > 0) || !(inertial.inertia.izz > 0)) {
       ctx.err("NON_POSITIVE_INERTIA", `Link "${l.name}" must have positive diagonal inertia (ixx, iyy, izz).`, {
         kind: "link",
         id: l.id,
       });
+    } else if (!isPositiveDefinite(inertial.inertia)) {
+      ctx.err("NON_POSITIVE_DEFINITE_INERTIA", `Link "${l.name}" inertia tensor must be positive definite.`, target);
     }
 
     if (!l.collision) {
       ctx.err("MISSING_COLLISION", `Link "${l.name}" has no collision geometry.`, { kind: "link", id: l.id });
+    }
+
+    for (const [bucket, spec] of [
+      ["visual", l.visual],
+      ["collision", l.collision],
+      ["inertial", inertial],
+    ] as const) {
+      if (spec && !isFinitePose(spec.origin)) {
+        ctx.err("NON_FINITE_POSE", `Link "${l.name}" ${bucket} origin must contain only finite numbers.`, target);
+      }
     }
 
     for (const [bucket, geom] of [
@@ -320,7 +386,7 @@ function validateLinkPhysics(ctx: ValidationContext): void {
 
     validateLinkMeshReferences(ctx, l);
 
-    if (inertial && magnitude(inertial.origin.xyz) > 0.5) {
+    if (inertial && isFinitePose(inertial.origin) && magnitude(inertial.origin.xyz) > 0.5) {
       ctx.warn("INERTIAL_ORIGIN_FAR", `Link "${l.name}" inertial origin is far (> 0.5 m) from the link origin.`, {
         kind: "link",
         id: l.id,
@@ -354,6 +420,9 @@ function validateLinkMeshReferences(ctx: ValidationContext, l: RobotModel["links
 
 export function validateModel(model: RobotModel): ValidationResult {
   const ctx = createContext(model);
+  for (const issue of findIdentityIssues(model)) {
+    ctx.err(issue.code, issue.message, issue.kind === "mesh" ? undefined : { kind: issue.kind, id: issue.id });
+  }
   validateModelLevel(ctx);
   validateNames(ctx);
   validateJointReferences(ctx);

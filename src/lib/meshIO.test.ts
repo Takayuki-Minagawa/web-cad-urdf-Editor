@@ -59,6 +59,26 @@ describe("parseMeshAsset", () => {
     const g = parseMeshAsset(asset);
     expect(g.getAttribute("position").count).toBeGreaterThan(0);
   });
+
+  it.each([false, true])("retains all OBJ objects with mixed optional attributes (reverse: %s)", (reverse) => {
+    const vertices = "v 0 0 0\nv 1 0 0\nv 0 1 0\nv 2 0 0\nv 3 0 0\nv 2 1 0\nvt 0 0\nvt 1 0\nvt 0 1\n";
+    const parts = ["o textured\nf 1/1 2/2 3/3\n", "o plain\nf 4 5 6\n"];
+    const data = vertices + (reverse ? parts.reverse() : parts).join("");
+    const geometry = parseMeshAsset({ id: "mixed", name: "mixed.obj", format: "obj", data });
+    expect(geometry.getAttribute("position").count).toBe(6);
+    expect(geometry.boundingBox!.min.toArray()).toEqual([0, 0, 0]);
+    expect(geometry.boundingBox!.max.toArray()).toEqual([3, 1, 0]);
+    expect(geometry.getAttribute("normal").count).toBe(6);
+    geometry.dispose();
+  });
+
+  it("keeps shared UV attributes when combining OBJ objects", () => {
+    const data = "v 0 0 0\nv 1 0 0\nv 0 1 0\nvt 0 0\nvt 1 0\nvt 0 1\no first\nf 1/1 2/2 3/3\no second\nf 1/1 2/2 3/3\n";
+    const geometry = parseMeshAsset({ id: "uv", name: "uv.obj", format: "obj", data });
+    expect(geometry.getAttribute("position").count).toBe(6);
+    expect(geometry.getAttribute("uv").count).toBe(6);
+    geometry.dispose();
+  });
 });
 
 describe("base64 round-trip", () => {

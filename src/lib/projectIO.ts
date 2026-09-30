@@ -19,6 +19,7 @@ import {
   type VisualSpec,
 } from "../types/robot";
 import { DEFAULT_COLOR, defaultGeometry, makeInertial } from "./factories";
+import { findIdentityIssues } from "./modelIdentity";
 
 export const PROJECT_SCHEMA_VERSION = 1;
 
@@ -199,13 +200,18 @@ export function normalizeProjectModel(value: unknown): RobotModel {
   if (!Array.isArray(value.meshes)) throw new Error('Invalid project file: model.meshes must be an array');
   if (value.unit !== undefined && value.unit !== "m") throw new Error('Invalid project file: model.unit must be "m"');
 
-  return {
+  const model: RobotModel = {
     name: typeof value.name === "string" ? value.name : "my_robot",
     unit: "m",
     links: value.links.map(normalizeLink),
     joints: value.joints.map(normalizeJoint),
     meshes: value.meshes.map(normalizeMesh),
   };
+  const identityIssues = findIdentityIssues(model);
+  if (identityIssues.length > 0) {
+    throw new Error(`Invalid project file: ${identityIssues[0].message}`);
+  }
+  return model;
 }
 
 /**
@@ -222,13 +228,16 @@ export function parseProject(text: string): RobotModel {
     throw new Error(`Invalid project file: not valid JSON (${detail})`);
   }
 
-  if (typeof parsed !== "object" || parsed === null) {
+  if (!isObject(parsed)) {
     throw new Error("Invalid project file: expected a JSON object");
   }
 
-  const record = parsed as Record<string, unknown>;
-  // Wrapped project file: { schemaVersion, model }
-  const candidate = record.model ?? parsed;
+  // Legacy raw models and unversioned wrappers remain supported. Explicit
+  // versions must be understood before normalization can safely interpret them.
+  if ("schemaVersion" in parsed && parsed.schemaVersion !== PROJECT_SCHEMA_VERSION) {
+    throw new Error(`Unsupported project schema version: ${String(parsed.schemaVersion)} (expected ${PROJECT_SCHEMA_VERSION})`);
+  }
+  const candidate = "model" in parsed || "schemaVersion" in parsed ? parsed.model : parsed;
 
   return normalizeProjectModel(candidate);
 }

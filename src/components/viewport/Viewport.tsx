@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Canvas } from "@react-three/fiber";
 import { Grid, OrbitControls } from "@react-three/drei";
 import { useRobotStore } from "../../store/robotStore";
+import { usePreviewStore } from "../../store/previewStore";
 import { computeLinkWorldTransforms } from "../../lib/kinematics";
 import { LinkObject } from "./LinkObject";
 import { JointAxes } from "./JointAxes";
@@ -12,7 +13,8 @@ export function Viewport() {
   const selection = useRobotStore((s) => s.selection);
   const select = useRobotStore((s) => s.select);
 
-  const world = useMemo(() => computeLinkWorldTransforms(model), [model]);
+  const positions = usePreviewStore((s) => s.positions);
+  const world = useMemo(() => computeLinkWorldTransforms(model, positions), [model, positions]);
   const selectedLinkId = selection?.kind === "link" ? selection.id : undefined;
   const selectedJointId = selection?.kind === "joint" ? selection.id : undefined;
 
