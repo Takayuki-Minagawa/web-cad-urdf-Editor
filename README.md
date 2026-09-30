@@ -30,6 +30,7 @@ npm install
 npm run dev        # start the dev server (Vite)
 npm run build      # typecheck + production build
 npm test           # run the unit test suite (Vitest)
+npm run lint       # ESLint checks
 ```
 
 Open the dev server URL (default http://localhost:5173). The app loads a
@@ -52,6 +53,25 @@ Toolbar actions:
 - **Export URDF zip** — download the full package (see below).
 - **Save JSON / Load JSON** — persist/restore the project (`robot_model.json`).
 - View toggles: visual, collision, joint axes, center of mass, grid.
+
+Select a movable joint in the robot tree to open **Joint preview**. Use its
+slider or numeric value to rotate revolute/continuous joints (radians) or move
+prismatic joints (meters). Revolute and prismatic previews respect their limits;
+continuous previews cover −π to π. **Reset all joint previews** selects zero, or
+the nearest allowed position when zero is outside a joint's limits. Missing or
+invalid position limits and zero/non-finite axes disable the preview controls.
+
+Preview positions affect only the viewport. Joint origins, saved JSON, and
+exported URDF remain unchanged. Loading or creating a project clears preview
+positions; removing joints, changing their type, or editing their limits clears
+or clamps the affected preview values. This is a kinematic preview, without
+collision detection or dynamics simulation.
+
+Project loading accepts schema version 1, legacy raw models, and legacy wrappers
+without a version. Unsupported explicit versions and empty/duplicate entity IDs
+are rejected with an error, preserving the current project. IDs are unique within
+each of links, joints, and meshes. Missing legacy joint/mesh IDs are still generated,
+but a generated ID must not collide with another entity of the same kind.
 
 Conventions:
 
@@ -105,12 +125,19 @@ gravity, prints link/joint info, and creates a slider per non-fixed joint.
 
 The validation panel evaluates the model live. **Errors** block a clean export
 (robot/link/joint names, single root, parent/child resolution, no self-loops,
-no cycles, no multi-parent links, no disconnected links, non-zero axes, limits
-on revolute/prismatic, positive mass & inertia, positive & finite geometry
+no cycles, no multi-parent links, no disconnected links, unique nonempty entity
+IDs, finite poses, finite non-zero axes, ordered finite limits on revolute/prismatic,
+nonnegative finite effort/velocity/damping/friction, positive finite mass,
+finite positive-definite inertia, positive & finite geometry
 dimensions, collision present, mesh references resolve, unit = m).
 **Warnings** flag risky-but-valid setups (mesh used for collision, identical
 visual/collision mesh, far-off inertial origin, extreme joint limits). Click an
 issue to jump to the offending link/joint.
+
+The inertia check verifies positive definiteness, including off-diagonal terms;
+it does not establish that a tensor matches the chosen geometry or satisfies
+every physical realizability constraint. Exporting with errors remains available
+after the existing confirmation, with those errors recorded in the package.
 
 ## Sample
 
@@ -131,6 +158,7 @@ modeling, sculpting, FEM/stress analysis, SDF/MJCF, ROS2 control, auto-VHACD.
 src/
   types/robot.ts            core data model (source of truth)
   store/robotStore.ts       Zustand store
+  store/previewStore.ts     transient joint preview positions
   lib/
     inertia.ts              primitive inertia formulas
     factories.ts            default link/joint/geometry builders
@@ -139,6 +167,7 @@ src/
     validation.ts           model validation rules
     pybullet.ts             preview_pybullet.py generator
     projectIO.ts            project JSON save/load
+    modelIdentity.ts        shared ID checks for import and validation
     meshIO.ts               STL/OBJ import/export, primitive → mesh
     meshPaths.ts            package mesh path resolution
     package.ts              JSZip package assembly
@@ -146,3 +175,13 @@ src/
   components/               toolbar, tree, viewport, properties, validation
   sample/sampleRobot.ts     built-in sample model
 ```
+
+## Development and references
+
+Run `npm test`, `npm run lint`, and `npm run build` locally before merging.
+No GitHub Actions workflow is required for these checks.
+
+Joint preview behavior was informed by the
+[urdf-loaders joint value API](https://github.com/gkjohnson/urdf-loaders/blob/master/javascript/README.md)
+and the [URDF reference parser](https://github.com/ros/urdfdom/blob/master/urdf_parser/src/joint.cpp).
+The editor uses its existing Three.js implementation and adds no runtime dependencies.

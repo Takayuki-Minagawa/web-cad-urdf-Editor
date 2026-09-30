@@ -2,6 +2,7 @@ import type { JointSpec, JointType } from "../../types/robot";
 import { useRobotStore } from "../../store/robotStore";
 import { Field, NumberInput, Section, TextInput, Vec3Input } from "../common/inputs";
 import { PoseEditor } from "./PoseEditor";
+import { JointPreview } from "./JointPreview";
 
 const TYPES: JointType[] = ["fixed", "revolute", "continuous", "prismatic"];
 
@@ -51,6 +52,8 @@ export function JointProperties({ joint }: { joint: JointSpec }) {
           </select>
         </Field>
       </Section>
+
+      {movable && <JointPreview joint={joint} />}
 
       <Section title="Origin">
         <PoseEditor pose={joint.origin} onChange={(origin) => patch({ origin })} />

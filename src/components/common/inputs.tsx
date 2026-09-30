@@ -51,7 +51,9 @@ export function NumberInput({
 
 function formatNum(n: number): string {
   if (!Number.isFinite(n)) return "0";
-  return String(Math.round(n * 1e6) / 1e6);
+  // Keep the stored precision: merely focusing and blurring a field must not
+  // round small dimensions or inertia components down to zero.
+  return String(n);
 }
 
 export function Vec3Input({

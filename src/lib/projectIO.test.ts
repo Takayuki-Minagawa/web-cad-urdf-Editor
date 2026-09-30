@@ -66,8 +66,45 @@ describe("projectIO", () => {
     expect(parsed.links[0].inertial.inertia).toEqual({ ixx: 1, ixy: 0, ixz: 0, iyy: 2, iyz: 0, izz: 3 });
   });
 
-  it("accepts unknown schemaVersion values when the model can be normalized", () => {
-    const parsed = parseProject(JSON.stringify({ schemaVersion: PROJECT_SCHEMA_VERSION + 1, model: buildModel() }));
-    expect(parsed.name).toBe("round_trip_robot");
+  it.each([PROJECT_SCHEMA_VERSION + 1, 0, -1, 1.5, "1", null])("rejects unsupported schemaVersion %s", (schemaVersion) => {
+    expect(() => parseProject(JSON.stringify({ schemaVersion, model: buildModel() })))
+      .toThrow("Unsupported project schema version");
+  });
+
+  it("accepts a legacy wrapper without a version", () => {
+    const model = buildModel();
+    expect(parseProject(JSON.stringify({ model }))).toEqual(model);
+  });
+
+  it.each(["links", "joints", "meshes"] as const)("rejects duplicate IDs in %s", (kind) => {
+    const model = buildModel();
+    model.meshes = [{ id: "mesh", name: "part.obj", format: "obj", data: "v 0 0 0" }];
+    const entities = model[kind];
+    const duplicate = { ...entities[0], name: "a different name" };
+    const broken = { ...model, [kind]: [...entities, duplicate] };
+    expect(() => parseProject(JSON.stringify(broken))).toThrow(/Duplicate .* ID/);
+  });
+
+  it.each(["links", "joints", "meshes"] as const)("rejects blank IDs in %s", (kind) => {
+    const model = buildModel();
+    model.meshes = [{ id: "mesh", name: "part.obj", format: "obj", data: "v 0 0 0" }];
+    model[kind][0].id = "  ";
+    expect(() => parseProject(JSON.stringify(model))).toThrow("empty ID");
+  });
+
+  it("rejects generated legacy IDs that collide with explicit IDs", () => {
+    const model = buildModel();
+    const broken = { ...model, joints: [{ ...model.joints[0], id: undefined }, { ...model.joints[0], id: "joint_0" }] };
+    expect(() => parseProject(JSON.stringify(broken))).toThrow('Duplicate joint ID "joint_0"');
+  });
+
+  it("allows the same ID across different entity kinds", () => {
+    const model = buildModel();
+    model.joints[0].id = model.links[0].id;
+    expect(parseProject(JSON.stringify(model))).toEqual(model);
+  });
+
+  it("requires a model in a versioned wrapper", () => {
+    expect(() => parseProject(JSON.stringify({ ...buildModel(), schemaVersion: 1 }))).toThrow("expected a model object");
   });
 });

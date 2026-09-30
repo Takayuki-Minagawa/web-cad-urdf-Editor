@@ -45,6 +45,17 @@ describe("store + export integration", () => {
     useRobotStore.getState().removeLink(b);
     expect(useRobotStore.getState().model.joints).toHaveLength(0);
     expect(useRobotStore.getState().model.links).toHaveLength(1);
+    expect(useRobotStore.getState().selection).toBeNull();
+  });
+
+  it("preserves an unrelated selection when deleting a link", () => {
+    const s = useRobotStore.getState();
+    const a = s.addLink();
+    const b = s.addLink();
+    const c = s.addLink();
+    const jointId = s.addJoint(a, b)!;
+    s.removeLink(c);
+    expect(useRobotStore.getState().selection).toEqual({ kind: "joint", id: jointId });
   });
 
   it("clears mesh ids without deleting visual or collision settings when a mesh asset is deleted", () => {

@@ -36,9 +36,20 @@ export function parseMeshAsset(asset: MeshAsset): THREE.BufferGeometry {
     if (geometries.length === 1) {
       geometry = geometries[0];
     } else {
-      // Try to merge; if attributes are incompatible, fall back to first.
-      const merged = mergeGeometries(geometries, false);
-      geometry = merged ?? geometries[0];
+      // OBJ objects can differ in optional UV/color attributes. The viewport
+      // uses one link material, so keep only shared attributes for merging;
+      // never silently discard objects when an optional attribute is absent.
+      for (const part of geometries) {
+        for (const name of Object.keys(part.attributes)) {
+          if (!geometries.every((g) => g.hasAttribute(name))) part.deleteAttribute(name);
+        }
+      }
+      try {
+        geometry = mergeGeometries(geometries, false);
+        if (!geometry) throw new Error("Could not combine all OBJ mesh objects");
+      } finally {
+        for (const part of geometries) part.dispose();
+      }
     }
   } else {
     throw new Error(`Unsupported mesh format: ${(asset as MeshAsset).format}`);

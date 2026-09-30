@@ -34,6 +34,8 @@ export interface ViewOptions {
 
 export interface RobotState {
   model: RobotModel;
+  /** Changes on project replacement, even when loading the same model object. */
+  modelRevision: number;
   selection: Selection;
   view: ViewOptions;
 
@@ -116,6 +118,7 @@ function appendLink(model: RobotModel, baseName: string, geometry = defaultGeome
 
 export const useRobotStore = create<RobotState>((set, get) => ({
   model: emptyModel(),
+  modelRevision: 0,
   selection: null,
   view: {
     showVisual: true,
@@ -131,12 +134,12 @@ export const useRobotStore = create<RobotState>((set, get) => ({
 
   loadModel: (model) => {
     disposeAllCachedMeshGeometries();
-    set({ model, selection: null });
+    set((s) => ({ model, modelRevision: s.modelRevision + 1, selection: null }));
   },
 
   newModel: () => {
     disposeAllCachedMeshGeometries();
-    set({ model: emptyModel(), selection: null });
+    set((s) => ({ model: emptyModel(), modelRevision: s.modelRevision + 1, selection: null }));
   },
 
   addLink: () => {
@@ -203,7 +206,10 @@ export const useRobotStore = create<RobotState>((set, get) => ({
     set((s) => {
       const joints = s.model.joints.filter((j) => j.parent !== id && j.child !== id);
       const links = s.model.links.filter((l) => l.id !== id);
-      const sel = s.selection?.kind === "link" && s.selection.id === id ? null : s.selection;
+      const selectedItemRemoved =
+        (s.selection?.kind === "link" && s.selection.id === id) ||
+        (s.selection?.kind === "joint" && !joints.some((joint) => joint.id === s.selection?.id));
+      const sel = selectedItemRemoved ? null : s.selection;
       return { model: { ...s.model, links, joints }, selection: sel };
     }),
 
