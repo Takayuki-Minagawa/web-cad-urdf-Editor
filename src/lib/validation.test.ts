@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import { validateModel, type ValidationResult } from "./validation";
 import { makeLink, makeJoint } from "./factories";
 import { emptyModel } from "../store/robotStore";
+import { parseProject } from "./projectIO";
+import { buildUrdf } from "./urdf";
 import {
   type LinkSpec,
   type RobotModel,
@@ -42,6 +44,32 @@ describe("validateModel - valid model", () => {
   it("does not flag a non-fixed joint with a non-zero default axis", () => {
     const result = validateModel(validModel());
     expect(codes(result)).not.toContain("ZERO_AXIS");
+  });
+});
+
+describe("validateModel - review regressions", () => {
+  it.each([1, 0.2, 1e-6, 1e-200, 1e200])("rejects a singular off-diagonal tensor at scale %s", (scale) => {
+    const m = validModel();
+    m.links[0].inertial.inertia = { ixx: scale, iyy: scale, izz: 2 * scale, ixy: scale, ixz: 0, iyz: 0 };
+    expect(codes(validateModel(m))).toContain("NON_POSITIVE_DEFINITE_INERTIA");
+  });
+
+  it("accepts a positive diagonal tensor across very different magnitudes", () => {
+    const m = validModel();
+    m.links[0].inertial.inertia = { ixx: 1e-200, iyy: 1e200, izz: 1e200, ixy: 0, ixz: 0, iyz: 0 };
+    expect(validateModel(m).errors).toEqual([]);
+  });
+
+  it.each(["fixed", "continuous"] as const)("ignores unused limit fields on a loaded %s joint", (type) => {
+    const m = validModel();
+    m.joints[0].type = type;
+    m.joints[0].limit = { lower: 2, upper: -2, effort: -1, velocity: -1 };
+    if (type === "fixed") m.joints[0].dynamics = { damping: -1, friction: -1 };
+    const loaded = parseProject(JSON.stringify(m));
+    expect(validateModel(loaded).errors).toEqual([]);
+    const doc = new DOMParser().parseFromString(buildUrdf(loaded), "application/xml");
+    expect(doc.querySelector("joint limit")).toBeNull();
+    if (type === "fixed") expect(doc.querySelector("joint dynamics")).toBeNull();
   });
 });
 

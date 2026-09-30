@@ -134,7 +134,8 @@ dimensions, collision present, mesh references resolve, unit = m).
 visual/collision mesh, far-off inertial origin, extreme joint limits). Click an
 issue to jump to the offending link/joint.
 
-The inertia check verifies positive definiteness, including off-diagonal terms;
+The inertia check verifies positive definiteness, including off-diagonal terms
+(tensors indistinguishable from singular within floating-point precision are rejected);
 it does not establish that a tensor matches the chosen geometry or satisfies
 every physical realizability constraint. Exporting with errors remains available
 after the existing confirmation, with those errors recorded in the package.

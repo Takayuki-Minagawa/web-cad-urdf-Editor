@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import * as THREE from "three";
 import type { JointSpec } from "../../types/robot";
 import { normalizedJointAxis } from "../../lib/kinematics";
+import { useJointArrow } from "./useJointArrow";
 
 interface Props {
   joints: JointSpec[];
@@ -10,9 +11,6 @@ interface Props {
   selectedJointId?: string;
   onSelect: (id: string) => void;
 }
-
-const PRISMATIC_COLOR = 0x4aa3ff;
-const REVOLUTE_COLOR = 0xff5a4a;
 
 /** Draws an arrow along each non-fixed joint's axis at the child link origin. */
 export function JointAxes({ joints, world, selectedJointId, onSelect }: Props) {
@@ -37,17 +35,15 @@ function SingleAxis({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const { position, quaternion, arrow } = useMemo(() => {
+  const arrow = useJointArrow(joint, selected);
+  const { position, quaternion } = useMemo(() => {
     const m = world.get(joint.child) ?? new THREE.Matrix4();
     const p = new THREE.Vector3();
     const q = new THREE.Quaternion();
     const s = new THREE.Vector3();
     m.decompose(p, q, s);
-    const dir = normalizedJointAxis(joint.axis)!;
-    const color = joint.type === "prismatic" ? PRISMATIC_COLOR : REVOLUTE_COLOR;
-    const arrow = new THREE.ArrowHelper(dir, new THREE.Vector3(0, 0, 0), 0.25, selected ? 0xffff00 : color, 0.06, 0.035);
-    return { position: p, quaternion: q, arrow };
-  }, [joint, world, selected]);
+    return { position: p, quaternion: q };
+  }, [joint.child, world]);
 
   return (
     <group position={position} quaternion={quaternion} onPointerDown={(e) => { e.stopPropagation(); onSelect(); }}>

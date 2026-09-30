@@ -35,25 +35,27 @@ function isFinitePose(pose: Pose): boolean {
 }
 
 /**
- * Check the symmetric tensor with Cholesky pivots. Scale first so a valid small
- * tensor is not rejected by underflow in an unscaled determinant calculation.
- * Do not use an absolute epsilon: valid inertias can be arbitrarily small.
+ * Diagonal scaling gives a dimensionless matrix with unit diagonal, preserving
+ * definiteness without underflowing tiny inertias or highly unequal diagonals.
+ * Allow for relative floating-point roundoff when rejecting singular tensors;
+ * the tolerance is independent of the mass/length units and inertia magnitude.
  */
 function isPositiveDefinite(inertia: Inertia): boolean {
-  const scale = Math.max(inertia.ixx, inertia.iyy, inertia.izz);
-  const xx = inertia.ixx / scale;
-  const yy = inertia.iyy / scale;
-  const zz = inertia.izz / scale;
-  const xy = inertia.ixy / scale;
-  const xz = inertia.ixz / scale;
-  const yz = inertia.iyz / scale;
-  const l11 = Math.sqrt(xx);
-  const l21 = xy / l11;
-  const l31 = xz / l11;
-  const pivotY = yy - l21 * l21;
-  if (!(pivotY > 0)) return false;
-  const l32 = (yz - l21 * l31) / Math.sqrt(pivotY);
-  return zz - l31 * l31 - l32 * l32 > 0;
+  const x = Math.sqrt(inertia.ixx);
+  const y = Math.sqrt(inertia.iyy);
+  const z = Math.sqrt(inertia.izz);
+  const xy = (inertia.ixy / x) / y;
+  const xz = (inertia.ixz / x) / z;
+  const yz = (inertia.iyz / y) / z;
+  if (![xy, xz, yz].every(Number.isFinite)) return false;
+  const yy = 1 - xy * xy;
+  const zz = 1 - xz * xz;
+  const offDiagonal = yz - xy * xz;
+  const tolerance = 8 * Number.EPSILON;
+  if (yy <= tolerance || zz <= tolerance) return false;
+  const diagonalProduct = yy * zz;
+  const offDiagonalSquare = offDiagonal * offDiagonal;
+  return diagonalProduct - offDiagonalSquare > tolerance * (diagonalProduct + offDiagonalSquare);
 }
 
 function meshIdOf(geom: GeometrySpec | undefined): string | undefined {
@@ -312,7 +314,7 @@ function validateJointPhysics(ctx: ValidationContext): void {
         id: j.id,
       });
     }
-    if (j.limit) {
+    if ((j.type === "revolute" || j.type === "prismatic") && j.limit) {
       const { lower, upper, effort, velocity } = j.limit;
       if (![lower, upper, effort, velocity].every(Number.isFinite) || lower > upper || effort < 0 || velocity < 0) {
         ctx.err("BAD_JOINT_LIMIT", `Joint "${j.name}" limits must be finite, with lower <= upper and non-negative effort and velocity.`, target);
@@ -320,7 +322,7 @@ function validateJointPhysics(ctx: ValidationContext): void {
         ctx.warn("EXTREME_LIMIT", `Joint "${j.name}" has an extremely large limit value.`, target);
       }
     }
-    if (j.dynamics) {
+    if (j.type !== "fixed" && j.dynamics) {
       const { damping, friction } = j.dynamics;
       if (![damping, friction].every((value) => Number.isFinite(value) && value >= 0)) {
         ctx.err("BAD_JOINT_DYNAMICS", `Joint "${j.name}" damping and friction must be finite and non-negative.`, target);
